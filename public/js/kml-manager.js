@@ -116,11 +116,17 @@ function renderKmlPanel() {
     if (!g) return;
     const gLayers = grouped[gid] || [];
     const allVis  = gLayers.length > 0 && gLayers.every(l => l.visible);
-    html += `<div class="kml-group" data-gid="${gid}">
+    const boundSite = g.site_id ? sites.find(s=>s.id===g.site_id) : null;
+    const isActive  = !g.site_id || (currentObj && currentObj.id===g.site_id);
+    const siteBadge = boundSite
+      ? `<span title="Привязана к объекту: ${esc(boundSite.name)}" style="font-size:9px;background:${isActive?'var(--acc)':'var(--tx3)'};color:#fff;border-radius:10px;padding:1px 6px;flex-shrink:0;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🏗 ${esc(boundSite.name)}</span>`
+      : '';
+    html += `<div class="kml-group" data-gid="${gid}" style="${!isActive?'opacity:.45':''}">
       <div class="kml-group-hd" onclick="kmlToggleGroup('${gid}')">
         <span class="kml-group-arrow">${g.collapsed ? '▶' : '▼'}</span>
         <span class="kml-group-eye ${allVis?'on':''}" onclick="event.stopPropagation();kmlGroupVisToggle('${gid}')">${allVis?'👁':'🚫'}</span>
         <span class="kml-group-name" ondblclick="event.stopPropagation();kmlRenameGroup('${gid}')">${esc(g.name)}</span>
+        ${siteBadge}
         <span class="kml-group-count">${gLayers.length}</span>
         <button class="kml-icon-btn" onclick="event.stopPropagation();kmlGroupCtx(event,'${gid}')">⋯</button>
       </div>
@@ -206,7 +212,7 @@ function kmlCreateGroup() {
      {label:'Создать',cls:'bp',fn:()=>{
        const nm=v('f-gnm').trim();if(!nm)return;
        const gid='g_'+Date.now();
-       kmGroups[gid]={id:gid,name:nm,collapsed:false};
+       kmGroups[gid]={id:gid,name:nm,collapsed:false,site_id:''};
        kmGroupOrder.push(gid);
        saveKmGroups();closeModal();renderKmlPanel();
      }}]);
@@ -215,6 +221,25 @@ function saveKmGroups(){try{localStorage.setItem('kml_groups',JSON.stringify({gr
 function loadKmGroups(){
   try{const d=JSON.parse(localStorage.getItem('kml_groups')||'{}');kmGroups=d.groups||{};kmGroupOrder=d.order||[];}
   catch(e){kmGroups={};kmGroupOrder=[];}
+}
+
+// ── Привязать группу к объекту (сайту) ─────────────────────
+function kmlGroupBindSite(gid) {
+  const g=kmGroups[gid];if(!g)return;
+  if(!sites||!sites.length){toast('Нет объектов','err');return;}
+  const opts=sites.map(s=>`<option value="${escAttr(s.id)}" ${g.site_id===s.id?'selected':''}>${esc(s.name)}</option>`).join('');
+  showModal('🏗 Привязать группу к объекту',
+    `<div class="fg"><label>Объект</label><select id="f-gsite"><option value="">— Не выбрано —</option>${opts}</select></div>
+     <div style="font-size:11px;color:var(--tx3);margin-top:6px">Слои этой группы будут видны на карте только при выборе указанного объекта.</div>`,
+    [{label:'Отмена',cls:'bs',fn:closeModal},
+     {label:'Привязать',cls:'bp',fn:()=>{
+       const sid=v('f-gsite');
+       if(!sid){toast('Выберите объект','err');return;}
+       g.site_id=sid;
+       saveKmGroups();closeModal();renderKmlPanel();renderLayerGroups();
+       const sn=(sites.find(s=>s.id===sid)||{}).name||'';
+       toast('Группа привязана к: '+sn,'ok');
+     }}]);
 }
 
 // ── Переименование слоя ─────────────────────────────────────
@@ -274,11 +299,17 @@ function kmlLayerCtx(ev, id) {
 // ── Контекстное меню группы ─────────────────────────────────
 function kmlGroupCtx(ev, gid) {
   const g=kmGroups[gid];if(!g)return;
+  const boundSite=g.site_id?sites.find(s=>s.id===g.site_id):null;
+  const bindItems=g.site_id
+    ?[{i:'🔓',l:'Отвязать от объекта'+(boundSite?' ('+esc(boundSite.name)+')':''),f:()=>{g.site_id='';saveKmGroups();renderKmlPanel();renderLayerGroups();}}]
+    :[{i:'🏗',l:'Привязать к объекту…',f:()=>kmlGroupBindSite(gid)}];
   showCtx(ev.clientX,ev.clientY,[
     {i:'📁',l:`<b>${esc(g.name)}</b>`,f:null},{sep:true},
     {i:'✏️',l:'Переименовать',f:()=>kmlRenameGroup(gid)},
     {i:'👁',l:'Показать все',f:()=>kmlSetGroupVis(gid,1)},
     {i:'🚫',l:'Скрыть все',f:()=>kmlSetGroupVis(gid,0)},
+    {sep:true},
+    ...bindItems,
     {sep:true},
     {i:'🗑',l:'Удалить группу',cls:'dan',f:()=>kmlDeleteGroup(gid)},
   ]);
@@ -546,6 +577,13 @@ function renderLayerGroupsWithSymbols() {
   if (map.getPane('volPointsPane'))map.getPane('volPointsPane').style.zIndex = 450;
 
   layers.filter(l => l.visible && !l.site_id).forEach(l => {
+    // If the layer's group is bound to a specific site, only show when that site is active
+    if (l.group_id) {
+      const grp = kmGroups[l.group_id];
+      if (grp && grp.site_id) {
+        if (!currentObj || currentObj.id !== grp.site_id) return;
+      }
+    }
     try {
       const gj       = JSON.parse(l.geojson);
       const showLabels = !!layerLabels[l.id];
@@ -601,6 +639,8 @@ function renderLayerGroupsWithSymbols() {
 
   // Объёмы всегда поверх KML
   setTimeout(bringVolumesToFront, 50);
+  // Обновить панель чтобы отразить активные/неактивные группы
+  if (kmlPanelOpen) setTimeout(renderKmlPanel, 50);
 }
 
 // ── Инициализация ───────────────────────────────────────────
