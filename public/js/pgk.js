@@ -21,6 +21,117 @@ async function renderPGK(){
   else await pgkPageMaterials(pb);
 }
 
+// ── Inline cell editor ─────────────────────────────────────
+async function pgkCellEdit(ev, td, entityType, id, field) {
+  ev.stopPropagation();
+  if (td.querySelector('input,select,textarea')) return;
+
+  // Find entity
+  let entity;
+  if (entityType==='worker') entity=pgkWorkers.find(x=>x.id===id);
+  else if (entityType==='machinery') entity=pgkMachinery.find(x=>x.id===id);
+  else if (entityType==='equipment') entity=pgkEquipment.find(x=>x.id===id);
+  else if (entityType==='material') {
+    for (const b of bases) {
+      const m=(b.materials||[]).find(m=>m.id===id);
+      if (m){entity={...m};break;}
+    }
+  }
+  if (!entity) return;
+
+  const currentVal = entity[field];
+  const origHTML = td.innerHTML;
+
+  // Determine editor type
+  let editorType='text', opts=null;
+  if (field==='status') {
+    editorType='select';
+    if (entityType==='worker') opts=Object.entries(WORKER_STATUSES);
+    else opts=[['working','✅ В работе'],['idle','⏸ Простой'],['broken','🔴 Сломана']];
+  } else if (field==='base_id') {
+    editorType='select';
+    opts=[['','— Снять с базы —'],...bases.map(b=>[b.id,b.name])];
+  } else if (field==='amount') {
+    editorType='number';
+  }
+
+  // Build editor element
+  let editor;
+  if (editorType==='select') {
+    editor=document.createElement('select');
+    (opts||[]).forEach(([val,lbl])=>{
+      const o=document.createElement('option');
+      o.value=val||'';
+      o.textContent=lbl;
+      if ((val||'')===(currentVal||'')) o.selected=true;
+      editor.appendChild(o);
+    });
+  } else {
+    editor=document.createElement('input');
+    editor.type=editorType;
+    if (editorType==='number'){editor.step='any';editor.min='0';}
+    editor.value=currentVal!=null?currentVal:'';
+  }
+  editor.style.cssText='width:100%;min-width:60px;font-size:11px;padding:2px 4px;border:1.5px solid var(--acc);border-radius:4px;background:var(--s1);color:var(--tx);box-sizing:border-box';
+
+  td.innerHTML='';
+  td.appendChild(editor);
+  editor.focus();
+  if (editor.tagName==='INPUT') editor.select();
+
+  const doSave=async()=>{
+    let newVal=editor.value;
+    if (field==='amount') newVal=parseFloat(newVal)||0;
+    else if (newVal==='') newVal=null;
+
+    td.innerHTML=origHTML;
+
+    // Preserve scroll position across re-render
+    const scrollEl=document.querySelector('.wt-scroll');
+    const scrollTop=scrollEl?scrollEl.scrollTop:0;
+
+    let url, body;
+    if (entityType==='worker') {
+      url=`${API}/pgk/workers/${id}`;
+      body={...entity,[field]:newVal,user_name:un()};
+    } else if (entityType==='machinery') {
+      url=`${API}/pgk/machinery/${id}`;
+      body={...entity,[field]:newVal,user_name:un()};
+    } else if (entityType==='equipment') {
+      url=`${API}/pgk/equipment/${id}`;
+      body={...entity,[field]:newVal};
+    } else if (entityType==='material') {
+      url=`${API}/materials/${id}`;
+      body={...entity,[field]:newVal};
+      delete body.base_name;
+    }
+
+    try {
+      await fetch(url,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      await loadPGK();
+      const newScrollEl=document.querySelector('.wt-scroll');
+      if (newScrollEl) newScrollEl.scrollTop=scrollTop;
+    } catch(e) {
+      toast('Ошибка сохранения','err');
+    }
+  };
+
+  const doCancel=()=>{td.innerHTML=origHTML;};
+
+  let saved=false;
+  if (editorType==='select') {
+    editor.onchange=()=>{saved=true;doSave();};
+    editor.onkeydown=e=>{if(e.key==='Escape'){saved=true;doCancel();}};
+    editor.onblur=()=>{if(!saved)doCancel();};
+  } else {
+    editor.onkeydown=e=>{
+      if(e.key==='Enter'){e.preventDefault();if(!saved){saved=true;doSave();}}
+      if(e.key==='Escape'){if(!saved){saved=true;doCancel();}}
+    };
+    editor.onblur=()=>{if(!saved){saved=true;doSave();}};
+  }
+}
+
 function pgkPageWorkers(pb){
   const today=new Date();
   const _ws=window._pgkWSort||'name', _wa=window._pgkWAsc!==false;
@@ -60,23 +171,23 @@ function pgkPageWorkers(pb){
   const baseOpts=`<option value="">Все базы</option>`+bases.map(b=>`<option value="${b.id}" ${_wfBase===b.id?'selected':''}>${esc(b.name)}</option>`).join('');
   const statusOpts=`<option value="">Все статусы</option>`+Object.entries(WORKER_STATUSES).map(([k,v])=>`<option value="${k}" ${_wfStatus===k?'selected':''}>${v}</option>`).join('');
 
-  const rows=filtered.map(w=>{
+  const rows=filtered.map((w,i)=>{
     const b=bases.find(x=>x.id===w.base_id);
     const days=getDays(w);
     const st=w.status||'home';
     const isFired=st==='fired';
+    const _id=escAttr(w.id);
     return `<tr class="${isFired?'wt-fired':''}" data-wid="${w.id}"
       data-search="${esc((w.name+' '+(w.role||'')+' '+(w.phone||'')+' '+(b?b.name:'')+' '+(w.notes||'')).toLowerCase())}"
-      onclick="openWorkerDetail('${escAttr(w.id)}')"
-      oncontextmenu="event.preventDefault();workerCtxMenu(event,'${escAttr(w.id)}')">
-      <td style="text-align:center;color:var(--tx3);font-size:10px;font-weight:600">${filtered.indexOf(w)+1}</td>
-      <td style="font-weight:600">${esc(w.name.trim())}</td>
-      <td style="color:var(--tx2)">${esc(w.role||'—')}</td>
-      <td><span class="wt-badge ${statusCls[st]||'wbs-home'}">${WORKER_STATUSES[st]||st}</span></td>
-      <td>${b?`<span style="color:var(--bpc)">🏕 ${esc(b.name)}</span>`:''}</td>
+      oncontextmenu="event.preventDefault();workerCtxMenu(event,'${_id}')">
+      <td style="text-align:center;color:var(--tx3);font-size:10px;font-weight:600">${i+1}</td>
+      <td class="td-link" style="font-weight:600" onclick="openWorkerDetail('${_id}')">${esc(w.name.trim())}</td>
+      <td class="td-editable" onclick="pgkCellEdit(event,this,'worker','${_id}','role')">${esc(w.role||'—')}</td>
+      <td class="td-editable" onclick="pgkCellEdit(event,this,'worker','${_id}','status')"><span class="wt-badge ${statusCls[st]||'wbs-home'}">${WORKER_STATUSES[st]||st}</span></td>
+      <td class="td-editable" onclick="pgkCellEdit(event,this,'worker','${_id}','base_id')">${b?`<span style="color:var(--bpc)">🏕 ${esc(b.name)}</span>`:'<span style="color:var(--tx3)">—</span>'}</td>
       <td class="td-days">${w.start_date?`<span title="с ${fmt(w.start_date)}">${days}</span>`:'—'}</td>
-      <td style="color:var(--tx3);white-space:nowrap">${w.phone?'📞 '+esc(w.phone):''}</td>
-      <td class="td-notes" title="${esc(w.notes||'')}">${esc(w.notes||'')}</td>
+      <td class="td-editable" style="white-space:nowrap" onclick="pgkCellEdit(event,this,'worker','${_id}','phone')">${w.phone?'📞 '+esc(w.phone):'—'}</td>
+      <td class="td-notes td-editable" title="${esc(w.notes||'')}" onclick="pgkCellEdit(event,this,'worker','${_id}','notes')">${esc(w.notes||'')}</td>
     </tr>`;
   }).join('');
 
@@ -131,7 +242,6 @@ function pgkPageWorkers(pb){
 }
 
 function pgkWorkerSearchFilter(val){
-  // Live filter — no DOM re-render, just show/hide rows
   window._pgkWSearchVal=val;
   const q=val.toLowerCase().trim();
   const rows=document.querySelectorAll('#wt-tbody tr[data-wid]');
@@ -141,6 +251,9 @@ function pgkWorkerSearchFilter(val){
     tr.style.display=match?'':'none';
     if(match)shown++;
   });
+  // Renumber visible rows from 1
+  let num=1;
+  rows.forEach(tr=>{if(tr.style.display!=='none'){const c=tr.querySelector('td:first-child');if(c)c.textContent=num++;}});
   const cntWrap=document.getElementById('wt-shown-count');
   const cntN=document.getElementById('wt-shown-n');
   if(cntWrap&&cntN){
@@ -347,24 +460,20 @@ function pgkPageMachinery(pb){
   const byCnt={working:0,idle:0,broken:0};
   pgkMachinery.forEach(m=>{ byCnt[m.status||'working']=(byCnt[m.status||'working']||0)+1; });
 
-  const rows=filtered.map(m=>{
+  const rows=filtered.map((m,i)=>{
     const b=bases.find(x=>x.id===m.base_id);
     const st=m.status||'working';
-    const drill=pgkMachinery.find(x=>x.id===m.drill_id);
-    const isDrill=DRILL_TYPES.includes(m.type);
-    const transport=isDrill&&m.drill_id?pgkMachinery.find(x=>x.id===m.drill_id):null;
-    const attachInfo=isDrill?(transport?`🚙 ${esc(transport.name)}`:'—'):(drill?`⛏ ${esc(drill.name)}`:'—');
+    const _id=escAttr(m.id);
     return `<tr data-mid="${m.id}"
       data-search="${esc((m.name+' '+(m.type||'')+' '+(m.plate_number||'')+' '+(m.vehicle_type||'')+' '+(b?b.name:'')+' '+(m.notes||'')).toLowerCase())}"
-      onclick="openMachDetail('${escAttr(m.id)}')"
-      oncontextmenu="event.preventDefault();machCtxMenu(event,'${escAttr(m.id)}')">
-      <td style="text-align:center;color:var(--tx3);font-size:10px;font-weight:600">${filtered.indexOf(m)+1}</td>
-      <td><span style="font-size:15px">${MICONS[m.type]||'🔧'}</span> <span style="font-weight:600">${esc(m.name)}</span></td>
-      <td style="color:var(--tx2)">${esc(m.type||'—')}</td>
-      <td><span class="wt-badge ${statCls[st]||'wbs-idle'}">${statLbl[st]||st}</span></td>
-      <td>${b?`<span style="color:var(--bpc)">🏕 ${esc(b.name)}</span>`:''}</td>
-      <td style="color:var(--tx2);font-size:10px">${esc(m.plate_number||'—')}</td>
-      <td class="td-notes" title="${esc(m.notes||'')}">${esc(m.notes||'')}</td>
+      oncontextmenu="event.preventDefault();machCtxMenu(event,'${_id}')">
+      <td style="text-align:center;color:var(--tx3);font-size:10px;font-weight:600">${i+1}</td>
+      <td class="td-link" onclick="openMachDetail('${_id}')"><span style="font-size:15px">${MICONS[m.type]||'🔧'}</span> <span style="font-weight:600">${esc(m.name)}</span></td>
+      <td class="td-editable" onclick="pgkCellEdit(event,this,'machinery','${_id}','type')">${esc(m.type||'—')}</td>
+      <td class="td-editable" onclick="pgkCellEdit(event,this,'machinery','${_id}','status')"><span class="wt-badge ${statCls[st]||'wbs-idle'}">${statLbl[st]||st}</span></td>
+      <td class="td-editable" onclick="pgkCellEdit(event,this,'machinery','${_id}','base_id')">${b?`<span style="color:var(--bpc)">🏕 ${esc(b.name)}</span>`:'<span style="color:var(--tx3)">—</span>'}</td>
+      <td class="td-editable" style="font-size:10px" onclick="pgkCellEdit(event,this,'machinery','${_id}','plate_number')">${esc(m.plate_number||'—')}</td>
+      <td class="td-notes td-editable" title="${esc(m.notes||'')}" onclick="pgkCellEdit(event,this,'machinery','${_id}','notes')">${esc(m.notes||'')}</td>
     </tr>`;
   }).join('');
 
@@ -415,6 +524,8 @@ function pgkMachSearchFilter(val){
   const rows=document.querySelectorAll('#mt-tbody tr[data-mid]');
   let shown=0;
   rows.forEach(tr=>{const match=!q||tr.dataset.search.includes(q);tr.style.display=match?'':'none';if(match)shown++;});
+  let num=1;
+  rows.forEach(tr=>{if(tr.style.display!=='none'){const c=tr.querySelector('td:first-child');if(c)c.textContent=num++;}});
   const cw=document.getElementById('mt-shown-count'),cn=document.getElementById('mt-shown-n');
   if(cw&&cn){if(q){cw.style.display='';cn.textContent=shown;}else{cw.style.display='none';}}
 }
@@ -543,21 +654,21 @@ function pgkPageEquipment(pb){
   const byCnt={working:0,idle:0,broken:0};
   pgkEquipment.forEach(e=>{byCnt[e.status||'working']=(byCnt[e.status||'working']||0)+1;});
 
-  const rows=filtered.map(e=>{
+  const rows=filtered.map((e,i)=>{
     const b=bases.find(x=>x.id===e.base_id);
     const st=e.status||'working';
+    const _id=escAttr(e.id);
     return `<tr data-eid="${e.id}"
       data-search="${esc((e.name+' '+(e.type||'')+' '+(e.serial_number||'')+' '+(e.responsible||'')+' '+(b?b.name:'')+' '+(e.notes||'')).toLowerCase())}"
-      onclick="openEquipDetail('${escAttr(e.id)}')"
-      oncontextmenu="event.preventDefault();equipCtxMenu(event,'${escAttr(e.id)}')">
-      <td style="text-align:center;color:var(--tx3);font-size:10px;font-weight:600">${filtered.indexOf(e)+1}</td>
-      <td style="font-weight:600">🔩 ${esc(e.name)}</td>
-      <td style="color:var(--tx2)">${esc(e.type||'—')}</td>
-      <td><span class="wt-badge ${statCls[st]||'wbs-idle'}">${statLbl[st]||st}</span></td>
-      <td>${b?`<span style="color:var(--bpc)">🏕 ${esc(b.name)}</span>`:''}</td>
-      <td style="color:var(--tx2);font-size:10px">${esc(e.serial_number||'—')}</td>
-      <td style="color:var(--tx2);font-size:10px">${e.responsible?'👤 '+esc(e.responsible):'—'}</td>
-      <td class="td-notes" title="${esc(e.notes||'')}">${esc(e.notes||'')}</td>
+      oncontextmenu="event.preventDefault();equipCtxMenu(event,'${_id}')">
+      <td style="text-align:center;color:var(--tx3);font-size:10px;font-weight:600">${i+1}</td>
+      <td class="td-link" style="font-weight:600" onclick="openEquipDetail('${_id}')">🔩 ${esc(e.name)}</td>
+      <td class="td-editable" onclick="pgkCellEdit(event,this,'equipment','${_id}','type')">${esc(e.type||'—')}</td>
+      <td class="td-editable" onclick="pgkCellEdit(event,this,'equipment','${_id}','status')"><span class="wt-badge ${statCls[st]||'wbs-idle'}">${statLbl[st]||st}</span></td>
+      <td class="td-editable" onclick="pgkCellEdit(event,this,'equipment','${_id}','base_id')">${b?`<span style="color:var(--bpc)">🏕 ${esc(b.name)}</span>`:'<span style="color:var(--tx3)">—</span>'}</td>
+      <td class="td-editable" style="font-size:10px" onclick="pgkCellEdit(event,this,'equipment','${_id}','serial_number')">${esc(e.serial_number||'—')}</td>
+      <td class="td-editable" style="font-size:10px" onclick="pgkCellEdit(event,this,'equipment','${_id}','responsible')">${e.responsible?'👤 '+esc(e.responsible):'—'}</td>
+      <td class="td-notes td-editable" title="${esc(e.notes||'')}" onclick="pgkCellEdit(event,this,'equipment','${_id}','notes')">${esc(e.notes||'')}</td>
     </tr>`;
   }).join('');
 
@@ -610,6 +721,8 @@ function pgkEquipSearchFilter(val){
   const rows=document.querySelectorAll('#et-tbody tr[data-eid]');
   let shown=0;
   rows.forEach(tr=>{const match=!q||tr.dataset.search.includes(q);tr.style.display=match?'':'none';if(match)shown++;});
+  let num=1;
+  rows.forEach(tr=>{if(tr.style.display!=='none'){const c=tr.querySelector('td:first-child');if(c)c.textContent=num++;}});
   const cw=document.getElementById('et-shown-count'),cn=document.getElementById('et-shown-n');
   if(cw&&cn){if(q){cw.style.display='';cn.textContent=shown;}else{cw.style.display='none';}}
 }
@@ -719,15 +832,15 @@ async function pgkPageMaterials(pb){
   const rows = filtered.map((m,i)=>{
     const pct = m.min_amount>0?Math.min(100,Math.round(m.amount/m.min_amount*100)):null;
     const low = m.min_amount>0&&m.amount<m.min_amount;
+    const _id=escAttr(m.id);
     return `<tr data-matid="${m.id}"
       data-search="${esc((m.name+' '+(m.category||'')+' '+(m.base_name||'')+' '+(m.notes||'')).toLowerCase())}"
-      onclick="pgkMatDetail('${escAttr(m.id)}')"
-      oncontextmenu="event.preventDefault();pgkMatCtxMenu(event,'${m.id}')">
+      oncontextmenu="event.preventDefault();pgkMatCtxMenu(event,'${_id}')">
       <td style="text-align:center;color:var(--tx3);font-size:10px;font-weight:600">${i+1}</td>
-      <td style="font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(m.name)}">📦 ${esc(m.name)}</td>
-      <td><span style="background:var(--s3);border:1px solid var(--bd);border-radius:20px;padding:1px 7px;font-size:10px;font-weight:600;color:var(--tx2)">${esc(m.category||'—')}</span></td>
+      <td class="td-link" style="font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(m.name)}" onclick="pgkMatDetail('${_id}')">📦 ${esc(m.name)}</td>
+      <td class="td-editable" onclick="pgkCellEdit(event,this,'material','${_id}','category')"><span style="background:var(--s3);border:1px solid var(--bd);border-radius:20px;padding:1px 7px;font-size:10px;font-weight:600;color:var(--tx2)">${esc(m.category||'—')}</span></td>
       <td style="color:var(--bpc)">🏕 ${esc(m.base_name||'—')}</td>
-      <td style="font-weight:700;color:var(--acc);text-align:right">${m.amount} <span style="font-weight:400;color:var(--tx3)">${esc(m.unit||'шт')}</span></td>
+      <td class="td-editable" style="font-weight:700;color:var(--acc);text-align:right" onclick="pgkCellEdit(event,this,'material','${_id}','amount')">${m.amount} <span style="font-weight:400;color:var(--tx3)">${esc(m.unit||'шт')}</span></td>
       <td style="text-align:center">
         ${pct!==null?`<div style="display:flex;align-items:center;gap:4px;min-width:80px">
           <div style="flex:1;height:4px;background:var(--s3);border-radius:2px">
@@ -736,7 +849,7 @@ async function pgkPageMaterials(pb){
           <span style="font-size:9px;color:${low?'var(--red)':'var(--tx3)'};min-width:26px">${pct}%</span>
         </div>`:'<span style="color:var(--tx3);font-size:10px">—</span>'}
       </td>
-      <td style="color:var(--tx3);font-size:10px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(m.notes||'')}">${esc(m.notes||'')}</td>
+      <td class="td-notes td-editable" title="${esc(m.notes||'')}" onclick="pgkCellEdit(event,this,'material','${_id}','notes')">${esc(m.notes||'')}</td>
     </tr>`;
   }).join('');
 

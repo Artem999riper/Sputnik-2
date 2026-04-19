@@ -169,12 +169,16 @@ body{font-size:13px;background:var(--bg);color:var(--tx);overflow:hidden;height:
 .wt-tbl thead th.wt-desc::after{content:' ▼';color:var(--acc)}
 .wt-tbl thead th.no-sort{cursor:default}
 .wt-tbl thead th.no-sort:hover{color:var(--tx2)}
-.wt-tbl tbody tr{border-bottom:1px solid var(--bd);cursor:pointer;transition:background .1s}
+.wt-tbl tbody tr{border-bottom:1px solid var(--bd);cursor:default;transition:background .1s}
 .wt-tbl tbody tr:hover{background:var(--accl,#eff6ff)}
 .wt-tbl tbody tr.wt-fired{opacity:.4}
 .wt-tbl td{padding:6px 10px;vertical-align:middle}
 .wt-tbl td.td-notes{color:var(--tx3);font-size:10px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .wt-tbl td.td-days{text-align:center;font-weight:700;color:var(--acc)}
+.wt-tbl td.td-link{cursor:pointer}
+.wt-tbl td.td-link:hover{color:var(--acc);text-decoration:underline}
+.wt-tbl td.td-editable{cursor:pointer;position:relative}
+.wt-tbl td.td-editable:hover{outline:1px dashed var(--acc);outline-offset:-2px;background:var(--accl,#eff6ff)}
 .wt-badge{display:inline-flex;align-items:center;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;white-space:nowrap}
 .wbs-working{background:#dcfce7;color:#15803d;border:1px solid #86efac}
 .wbs-idle{background:#fef9c3;color:#a16207;border:1px solid #fde047}
