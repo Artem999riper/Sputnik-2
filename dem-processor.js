@@ -372,10 +372,16 @@ async function processDEM({bbox,projId,proj4,epsg,projName,format,
     let demTif=clippedTif;
     if (useGeoid){
       const gTif=path.join(tmpDir,'geoid.tif');
+      const gTifFlat=path.join(tmpDir,'geoid_flat.tif');
       try{
         await runGDAL('gdalwarp',['-s_srs','EPSG:4979','-t_srs','EPSG:9518',
           '-r','bilinear','-co','COMPRESS=LZW',clippedTif,gTif]);
-        demTif=gTif; log.push('Geoid OK');
+        // Strip compound CRS tag: after geoid conversion heights are already in Baltic 1977 system.
+        // Without this, gdalwarp in step 4 sees EPSG:9518 (3D compound) as source and applies an
+        // inverse vertical datum transformation when targeting geographic 2D CRS (WGS84, GSK-2011),
+        // which negates or corrupts the Z values. Reassigning to EPSG:4326 (2D) prevents that.
+        await runGDAL('gdal_translate',['-a_srs','EPSG:4326','-co','COMPRESS=LZW',gTif,gTifFlat]);
+        demTif=gTifFlat; log.push('Geoid OK');
       }catch(e){log.push('Geoid skip');}
     }
 
