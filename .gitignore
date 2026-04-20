@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Database files (runtime data)
+*.db
+*.db-wal
+*.db-shm
+
+# Backups and uploads (runtime data)
+backups/
+public/uploads/
+public/photos/
+
+# Environment
+.env
+.env.*
+
+# Logs
+*.log
+logs/
+
+# Ruflo / Claude flow runtime
+.claude-flow/daemon.pid
+.claude-flow/logs/
+.claude-flow/sessions/
+.swarm/
+agentdb.rvf
+agentdb.rvf.lock
+.claude/memory.db
+
+# OS
+.DS_Store
+Thumbs.db

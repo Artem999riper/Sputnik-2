@@ -2,30 +2,35 @@ const path = require('path');
 const fs   = require('fs');
 const { v4: uuid } = require('uuid');
 const { all, get, run } = require('../database');
+const { required, wrap } = require('./validate');
 
 module.exports = (app, getDb, L, { upload, demProcessor, BACKUP_DIR, doBackup }) => {
   const db = () => getDb();
 
   // ── KML LAYERS (global) ────────────────────────────────────
-  app.get('/api/layers', (req, res) =>
+  app.get('/api/layers', wrap((req, res) =>
     res.json(all(db(), 'SELECT * FROM kml_layers ORDER BY created_at DESC'))
-  );
+  ));
 
-  app.post('/api/layers', (req, res) => {
+  app.post('/api/layers', wrap((req, res) => {
+    const err = required(['name', 'geojson'], req.body);
+    if (err) return res.status(400).json({ error: err });
     const id = uuid();
     const { name, geojson, color, symbol, group_id, line_dash } = req.body;
     run(db(), 'INSERT INTO kml_layers(id,name,geojson,color,visible,symbol,group_id,line_dash)VALUES(?,?,?,?,1,?,?,?)',
       [id, name, geojson, color || '#1a56db', symbol || '', group_id || '', line_dash || 'solid']);
     res.json({ id });
-  });
+  }));
 
-  app.get('/api/layers/:id', (req, res) => {
+  app.get('/api/layers/:id', wrap((req, res) => {
     const l = get(db(), 'SELECT * FROM kml_layers WHERE id=?', [req.params.id]);
     if (!l) return res.status(404).json({ error: 'Not found' });
     res.json(l);
-  });
+  }));
 
-  app.put('/api/layers/:id', (req, res) => {
+  app.put('/api/layers/:id', wrap((req, res) => {
+    const err = required(['name'], req.body);
+    if (err) return res.status(400).json({ error: err });
     const { name, color, visible, symbol, group_id, line_dash, geojson } = req.body;
     const vis = visible === false ? 0 : (visible ? 1 : 0);
     if (geojson !== undefined) {
@@ -36,15 +41,15 @@ module.exports = (app, getDb, L, { upload, demProcessor, BACKUP_DIR, doBackup })
         [name, color || '#1a56db', vis, symbol || '', group_id || '', line_dash || 'solid', req.params.id]);
     }
     res.json({ success: true });
-  });
+  }));
 
-  app.delete('/api/layers/:id', (req, res) => {
+  app.delete('/api/layers/:id', wrap((req, res) => {
     run(db(), 'DELETE FROM kml_layers WHERE id=?', [req.params.id]);
     res.json({ success: true });
-  });
+  }));
 
   // ── ACTIVITY LOG ───────────────────────────────────────────
-  app.get('/api/log', (req, res) => {
+  app.get('/api/log', wrap((req, res) => {
     const { user, today } = req.query;
     let sql = `SELECT l.*,s.name as site_name,b.name as base_name FROM activity_log l
       LEFT JOIN sites s ON l.site_id=s.id LEFT JOIN bases b ON l.base_id=b.id`;
@@ -54,14 +59,14 @@ module.exports = (app, getDb, L, { upload, demProcessor, BACKUP_DIR, doBackup })
     if (where.length) sql += ' WHERE ' + where.join(' AND ');
     sql += ' ORDER BY l.created_at DESC LIMIT 200';
     res.json(all(db(), sql, p));
-  });
+  }));
 
-  app.get('/api/log/users', (req, res) =>
+  app.get('/api/log/users', wrap((req, res) =>
     res.json(all(db(), 'SELECT DISTINCT user_name FROM activity_log ORDER BY user_name').map(r => r.user_name))
-  );
+  ));
 
   // ── GLOBAL SEARCH ──────────────────────────────────────────
-  app.get('/api/search', (req, res) => {
+  app.get('/api/search', wrap((req, res) => {
     const q = (req.query.q || '').trim();
     if (q.length < 2) return res.json({ sites: [], bases: [], workers: [], machinery: [], tasks: [] });
     const like = '%' + q + '%';
@@ -73,10 +78,10 @@ module.exports = (app, getDb, L, { upload, demProcessor, BACKUP_DIR, doBackup })
       machinery: all(d, 'SELECT id,name,type,plate_number,base_id,status FROM pgk_machinery WHERE name LIKE ? OR plate_number LIKE ? OR type LIKE ? LIMIT 8', [like, like, like]),
       tasks:     all(d, 'SELECT t.id,t.title,t.status,t.due_date,s.name as site_name FROM site_tasks t LEFT JOIN sites s ON t.site_id=s.id WHERE t.title LIKE ? OR t.description LIKE ? OR t.responsible LIKE ? LIMIT 8', [like, like, like]),
     });
-  });
+  }));
 
   // ── PERSONNEL REPORT ───────────────────────────────────────
-  app.get('/api/report/personnel', (req, res) => {
+  app.get('/api/report/personnel', wrap((req, res) => {
     const d = db();
     const workers   = all(d, 'SELECT w.*, b.name as base_name, b.lat as base_lat, b.lng as base_lng FROM pgk_workers w LEFT JOIN bases b ON w.base_id=b.id ORDER BY b.name, w.name');
     const machinery = all(d, 'SELECT * FROM pgk_machinery ORDER BY base_id, name');
@@ -91,15 +96,15 @@ module.exports = (app, getDb, L, { upload, demProcessor, BACKUP_DIR, doBackup })
       machinery: machinery.filter(m => m.base_id === b.id),
     }));
     res.json({ report, no_base: workers.filter(w => !w.base_id), total_workers: workers.length, total_machinery: machinery.length });
-  });
+  }));
 
   // ── PHOTOS ─────────────────────────────────────────────────
-  app.get('/api/photos', (req, res) => {
+  app.get('/api/photos', wrap((req, res) => {
     const entity_type = req.query.entity_type || req.query.ref_type;
     const entity_id   = req.query.entity_id   || req.query.ref_id;
     if (!entity_type || !entity_id) return res.json([]);
     res.json(all(db(), 'SELECT * FROM photos WHERE entity_type=? AND entity_id=? ORDER BY created_at DESC', [entity_type, entity_id]));
-  });
+  }));
 
   app.post('/api/photos/upload', (req, res) => {
     if (!upload) return res.status(503).json({ error: 'multer not installed' });
@@ -108,49 +113,50 @@ module.exports = (app, getDb, L, { upload, demProcessor, BACKUP_DIR, doBackup })
       if (!req.file) return res.status(400).json({ error: 'No file' });
       const { entity_type, entity_id, caption } = req.body;
       const id = uuid();
-      run(db(), 'INSERT INTO photos(id,entity_type,entity_id,filename,caption)VALUES(?,?,?,?,?)',
-        [id, entity_type, entity_id, req.file.filename, caption || '']);
-      res.json({ id, url: '/photos/' + req.file.filename });
+      try {
+        run(db(), 'INSERT INTO photos(id,entity_type,entity_id,filename,caption)VALUES(?,?,?,?,?)',
+          [id, entity_type, entity_id, req.file.filename, caption || '']);
+        res.json({ id, url: '/photos/' + req.file.filename });
+      } catch(e) {
+        console.error('[API Error] POST /api/photos/upload', e.message);
+        res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+      }
     });
   });
 
-  app.delete('/api/photos/:id', (req, res) => {
+  app.delete('/api/photos/:id', wrap((req, res) => {
     const ph = get(db(), 'SELECT * FROM photos WHERE id=?', [req.params.id]);
     if (ph) { try { fs.unlinkSync(path.join(__dirname, '..', 'public', 'photos', ph.filename)); } catch(e) {} }
     run(db(), 'DELETE FROM photos WHERE id=?', [req.params.id]);
     res.json({ ok: true });
-  });
+  }));
 
   // ── BACKUP ─────────────────────────────────────────────────
-  app.get('/api/backups', (req, res) => {
+  app.get('/api/backups', wrap((req, res) => {
     const files = fs.existsSync(BACKUP_DIR)
       ? fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.db'))
           .map(f => { const st = fs.statSync(path.join(BACKUP_DIR, f)); return { name: f, size: st.size, date: st.mtime }; })
           .sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 20)
       : [];
     res.json(files);
-  });
+  }));
 
-  app.post('/api/backups/create', (req, res) => {
+  app.post('/api/backups/create', wrap((req, res) => {
     const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const fname = `backup_${ts}.db`;
-    try {
-      const size = doBackup(path.join(BACKUP_DIR, fname));
-      res.json({ ok: true, name: fname, size });
-    } catch(e) { res.status(500).json({ error: e.message }); }
-  });
+    const size = doBackup(path.join(BACKUP_DIR, fname));
+    res.json({ ok: true, name: fname, size });
+  }));
 
-  app.post('/api/backups/restore/:name', (req, res) => {
+  app.post('/api/backups/restore/:name', wrap((req, res) => {
     const src = path.join(BACKUP_DIR, req.params.name);
     if (!fs.existsSync(src)) return res.status(404).json({ error: 'Not found' });
-    try {
-      fs.copyFileSync(src, path.join(__dirname, '..', 'survey.db'));
-      try { fs.unlinkSync(path.join(__dirname, '..', 'survey.db-wal')); } catch(e) {}
-      try { fs.unlinkSync(path.join(__dirname, '..', 'survey.db-shm')); } catch(e) {}
-      if (fs.existsSync(src + '-wal')) fs.copyFileSync(src + '-wal', path.join(__dirname, '..', 'survey.db-wal'));
-      res.json({ ok: true, message: 'Восстановлено. Перезапустите сервер.' });
-    } catch(e) { res.status(500).json({ error: e.message }); }
-  });
+    fs.copyFileSync(src, path.join(__dirname, '..', 'survey.db'));
+    try { fs.unlinkSync(path.join(__dirname, '..', 'survey.db-wal')); } catch(e) {}
+    try { fs.unlinkSync(path.join(__dirname, '..', 'survey.db-shm')); } catch(e) {}
+    if (fs.existsSync(src + '-wal')) fs.copyFileSync(src + '-wal', path.join(__dirname, '..', 'survey.db-wal'));
+    res.json({ ok: true, message: 'Восстановлено. Перезапустите сервер.' });
+  }));
 
   // ── DEM EXPORT ─────────────────────────────────────────────
   app.get('/api/dem/status', async (req, res) => {

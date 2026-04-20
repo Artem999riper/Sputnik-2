@@ -1,5 +1,6 @@
 const { v4: uuid } = require('uuid');
 const { all, get, run } = require('../database');
+const { wrap } = require('./validate');
 
 function tryJSON(str, fallback) {
   try { return JSON.parse(str); } catch(e) { return fallback; } }
@@ -7,12 +8,12 @@ function tryJSON(str, fallback) {
 module.exports = (app, getDb, L) => {
   const db = () => getDb();
 
-  app.get('/api/cargo', (req, res) => {
+  app.get('/api/cargo', wrap((req, res) => {
     res.json(all(db(), 'SELECT * FROM cargo_orders ORDER BY created_at DESC')
       .map(r => ({ ...r, items: tryJSON(r.items, []) })));
-  });
+  }));
 
-  app.post('/api/cargo', (req, res) => {
+  app.post('/api/cargo', wrap((req, res) => {
     const id = uuid();
     const { num, base_id, from_desc, depart_date, eta_date, status, driver, vehicle,
             items, total_weight, notes, created_by, notify_workers } = req.body;
@@ -43,10 +44,11 @@ module.exports = (app, getDb, L) => {
     });
     L(null, base_id || null, 'Заявка на груз', `№${orderNum} создана`, created_by);
     res.json({ id, num: orderNum });
-  });
+  }));
 
-  app.post('/api/cargo/:id/confirm', (req, res) => {
+  app.post('/api/cargo/:id/confirm', wrap((req, res) => {
     const { worker_name, confirm } = req.body;
+    if (!worker_name) return res.status(400).json({ error: 'Поле "worker_name" обязательно' });
     const d = db();
     const order = get(d, 'SELECT * FROM cargo_orders WHERE id=?', [req.params.id]);
     if (!order) return res.status(404).json({ error: 'Not found' });
@@ -57,9 +59,9 @@ module.exports = (app, getDb, L) => {
     const notifyWorkers = tryJSON(order.notify_workers, []);
     const allConfirmed = notifyWorkers.length > 0 && notifyWorkers.every(w => confs.includes(w));
     res.json({ confirmations: confs, allConfirmed });
-  });
+  }));
 
-  app.post('/api/cargo/:id/deliver', (req, res) => {
+  app.post('/api/cargo/:id/deliver', wrap((req, res) => {
     const { actual_arrive, notes: extraNotes, user_name } = req.body;
     const d = db();
     const order = get(d, 'SELECT * FROM cargo_orders WHERE id=?', [req.params.id]);
@@ -118,9 +120,9 @@ module.exports = (app, getDb, L) => {
 
     L(null, order.base_id, 'Груз доставлен', `Заявка №${order.num}: ${pushed.length} поз. → материалы`, user_name || 'Система');
     res.json({ ok: true, pushed });
-  });
+  }));
 
-  app.put('/api/cargo/:id', (req, res) => {
+  app.put('/api/cargo/:id', wrap((req, res) => {
     const { num, base_id, from_desc, depart_date, eta_date, actual_arrive, status,
             driver, vehicle, items, total_weight, notes, created_by } = req.body;
     const d = db();
@@ -134,10 +136,10 @@ module.exports = (app, getDb, L) => {
       L(null, base_id || null, 'Статус груза', `№${num || existing.num}: ${existing.status} → ${status}`, created_by || 'Система');
     }
     res.json({ success: true });
-  });
+  }));
 
-  app.delete('/api/cargo/:id', (req, res) => {
+  app.delete('/api/cargo/:id', wrap((req, res) => {
     run(db(), 'DELETE FROM cargo_orders WHERE id=?', [req.params.id]);
     res.json({ success: true });
-  });
+  }));
 };
