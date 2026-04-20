@@ -367,22 +367,25 @@ async function processDEM({bbox,projId,proj4,epsg,projName,format,
     ]);
     log.push('Clip OK');
 
-    // 3. Геоид
-    onProgress&&onProgress(28,useGeoid?'Перевод БСВ-77...':'Подготовка...');
+    // 3. Геоид (WGS84 эллипс → EGM2008 ортометрические высоты / БСВ-77 приближение)
+    onProgress&&onProgress(28,useGeoid?'Перевод БСВ-77 (EGM2008)...':'Подготовка...');
     let demTif=clippedTif;
     if (useGeoid){
-      const gTif=path.join(tmpDir,'geoid.tif');
+      const gTif    =path.join(tmpDir,'geoid.tif');
       const gTifFlat=path.join(tmpDir,'geoid_flat.tif');
       try{
-        await runGDAL('gdalwarp',['-s_srs','EPSG:4979','-t_srs','EPSG:9518',
+        // EPSG:4979  = WGS84 geographic 3D (источник: эллипсоидальные высоты ArcticDEM)
+        // EPSG:4326+3855 = WGS84 2D + EGM2008 height (цель: ортометрические высоты, знак +вверх)
+        // Compound-синтаксис поддерживается GDAL 3.x / PROJ 6+.
+        // После конвертации высоты в пикселях = H_EGM2008 > 0 для суши в России.
+        await runGDAL('gdalwarp',['-s_srs','EPSG:4979','-t_srs','EPSG:4326+3855',
           '-r','bilinear','-co','COMPRESS=LZW',clippedTif,gTif]);
-        // Strip compound CRS tag: after geoid conversion heights are already in Baltic 1977 system.
-        // Without this, gdalwarp in step 4 sees EPSG:9518 (3D compound) as source and applies an
-        // inverse vertical datum transformation when targeting geographic 2D CRS (WGS84, GSK-2011),
-        // which negates or corrupts the Z values. Reassigning to EPSG:4326 (2D) prevents that.
+        // Сбрасываем составной тег → только EPSG:4326 (2D).
+        // Без этого gdalwarp на шаге 4 видит compound-источник и повторно применяет
+        // вертикальное преобразование при репроекции, искажая высоты.
         await runGDAL('gdal_translate',['-a_srs','EPSG:4326','-co','COMPRESS=LZW',gTif,gTifFlat]);
-        demTif=gTifFlat; log.push('Geoid OK');
-      }catch(e){log.push('Geoid skip');}
+        demTif=gTifFlat; log.push('Geoid EGM2008 OK');
+      }catch(e){ log.push('Geoid skip: '+e.message.slice(0,80)); }
     }
 
     // 4. Репроекция
