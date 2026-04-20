@@ -1,5 +1,6 @@
 const { v4: uuid } = require('uuid');
 const { all, get, run } = require('../database');
+const { required, wrap } = require('./validate');
 
 function gtJSON(str, fb) { try { return JSON.parse(str); } catch(e) { return fb; } }
 
@@ -7,15 +8,17 @@ module.exports = (app, getDb, L) => {
   const db = () => getDb();
 
   // ── GLOBAL TASKS ───────────────────────────────────────────
-  app.get('/api/gtasks', (req, res) => {
+  app.get('/api/gtasks', wrap((req, res) => {
     res.json(all(db(), 'SELECT * FROM global_tasks ORDER BY created_at DESC').map(r => ({
       ...r,
       responsibles:  gtJSON(r.responsibles, []),
       confirmations: gtJSON(r.confirmations, []),
     })));
-  });
+  }));
 
-  app.post('/api/gtasks', (req, res) => {
+  app.post('/api/gtasks', wrap((req, res) => {
+    const err = required(['title'], req.body);
+    if (err) return res.status(400).json({ error: err });
     const id = uuid();
     const { title, description, priority, category, due_date, site_id, base_id, created_by, responsibles, notes } = req.body;
     const d = db();
@@ -30,9 +33,9 @@ module.exports = (app, getDb, L) => {
         [uuid(), r, 'task_assigned', '📋 Вам назначена задача', title, id, 'gtask']);
     });
     res.json({ id });
-  });
+  }));
 
-  app.put('/api/gtasks/:id', (req, res) => {
+  app.put('/api/gtasks/:id', wrap((req, res) => {
     const d = db();
     const existing = get(d, 'SELECT * FROM global_tasks WHERE id=?', [req.params.id]);
     if (!existing) return res.status(404).json({ error: 'Not found' });
@@ -49,9 +52,11 @@ module.exports = (app, getDb, L) => {
         [uuid(), r, 'task_assigned', '📋 Вам назначена задача', title || existing.title, req.params.id, 'gtask']);
     });
     res.json({ success: true });
-  });
+  }));
 
-  app.post('/api/gtasks/:id/confirm', (req, res) => {
+  app.post('/api/gtasks/:id/confirm', wrap((req, res) => {
+    const err = required(['worker_name'], req.body);
+    if (err) return res.status(400).json({ error: err });
     const { worker_name, confirm } = req.body;
     const d = db();
     const task = get(d, 'SELECT * FROM global_tasks WHERE id=?', [req.params.id]);
@@ -65,9 +70,9 @@ module.exports = (app, getDb, L) => {
     run(d, 'UPDATE global_tasks SET confirmations=?,status=? WHERE id=?',
       [JSON.stringify(confirmations), newStatus, req.params.id]);
     res.json({ ok: true, status: newStatus, confirmations, allConfirmed });
-  });
+  }));
 
-  app.post('/api/gtasks/:id/close', (req, res) => {
+  app.post('/api/gtasks/:id/close', wrap((req, res) => {
     const { user_name } = req.body;
     const d = db();
     const task = get(d, 'SELECT * FROM global_tasks WHERE id=?', [req.params.id]);
@@ -80,24 +85,24 @@ module.exports = (app, getDb, L) => {
     run(d, 'UPDATE global_tasks SET status=?,closed_at=? WHERE id=?', ['done', closedAt, req.params.id]);
     L(task.site_id, task.base_id, 'Задача завершена', task.title, user_name || 'Система');
     res.json({ ok: true });
-  });
+  }));
 
-  app.delete('/api/gtasks/:id', (req, res) => {
+  app.delete('/api/gtasks/:id', wrap((req, res) => {
     const d = db();
     const t = get(d, 'SELECT * FROM global_tasks WHERE id=?', [req.params.id]);
     run(d, 'DELETE FROM global_tasks WHERE id=?', [req.params.id]);
     if (t) L(t.site_id, t.base_id, 'Задача удалена', t.title, '');
     res.json({ success: true });
-  });
+  }));
 
   // ── NOTIFICATIONS ──────────────────────────────────────────
-  app.get('/api/notifications', (req, res) => {
+  app.get('/api/notifications', wrap((req, res) => {
     const { user } = req.query;
     if (!user) return res.json([]);
     res.json(all(db(), 'SELECT * FROM notifications WHERE recipient=? AND is_read=0 ORDER BY created_at DESC LIMIT 50', [user]));
-  });
+  }));
 
-  app.post('/api/notifications/read', (req, res) => {
+  app.post('/api/notifications/read', wrap((req, res) => {
     const { ids, user } = req.body;
     const d = db();
     if (ids && ids.length) {
@@ -106,5 +111,5 @@ module.exports = (app, getDb, L) => {
       run(d, 'UPDATE notifications SET is_read=1 WHERE recipient=?', [user]);
     }
     res.json({ ok: true });
-  });
+  }));
 };
