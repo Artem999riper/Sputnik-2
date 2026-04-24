@@ -31,16 +31,17 @@ module.exports = (app, getDb, L, { upload, demProcessor, BACKUP_DIR, doBackup })
   app.put('/api/layers/:id', wrap((req, res) => {
     const err = required(['name'], req.body);
     if (err) return res.status(400).json({ error: err });
-    const { name, color, visible, symbol, group_id, line_dash, geojson, min_zoom, max_zoom } = req.body;
+    const { name, color, visible, symbol, group_id, line_dash, geojson, min_zoom, max_zoom, size } = req.body;
     const vis  = visible === false ? 0 : (visible ? 1 : 0);
     const minZ = min_zoom != null ? parseInt(min_zoom) : 0;
     const maxZ = max_zoom != null ? parseInt(max_zoom) : 20;
+    const sz   = size != null ? parseFloat(size) : 1;
     if (geojson !== undefined) {
-      run(db(), 'UPDATE kml_layers SET name=?,color=?,visible=?,symbol=?,group_id=?,line_dash=?,min_zoom=?,max_zoom=?,geojson=? WHERE id=?',
-        [name, color || '#1a56db', vis, symbol || '', group_id || '', line_dash || 'solid', minZ, maxZ, geojson, req.params.id]);
+      run(db(), 'UPDATE kml_layers SET name=?,color=?,visible=?,symbol=?,group_id=?,line_dash=?,min_zoom=?,max_zoom=?,size=?,geojson=? WHERE id=?',
+        [name, color || '#1a56db', vis, symbol || '', group_id || '', line_dash || 'solid', minZ, maxZ, sz, geojson, req.params.id]);
     } else {
-      run(db(), 'UPDATE kml_layers SET name=?,color=?,visible=?,symbol=?,group_id=?,line_dash=?,min_zoom=?,max_zoom=? WHERE id=?',
-        [name, color || '#1a56db', vis, symbol || '', group_id || '', line_dash || 'solid', minZ, maxZ, req.params.id]);
+      run(db(), 'UPDATE kml_layers SET name=?,color=?,visible=?,symbol=?,group_id=?,line_dash=?,min_zoom=?,max_zoom=?,size=? WHERE id=?',
+        [name, color || '#1a56db', vis, symbol || '', group_id || '', line_dash || 'solid', minZ, maxZ, sz, req.params.id]);
     }
     res.json({ success: true });
   }));

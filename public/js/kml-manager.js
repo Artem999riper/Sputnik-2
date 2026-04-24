@@ -70,11 +70,12 @@ function kmlSvgIcon(symbolKey, color, size) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24">${inner}</svg>`;
 }
 
-// Per-feature иконка (учитывает feature-level переопределения цвета/символа)
+// Per-feature иконка (учитывает feature-level переопределения цвета/символа и размер слоя)
 function kmlFeatureDivIcon(layerObj, featureProps) {
   const sym   = (featureProps && featureProps._sym)   || layerObj.symbol || 'point';
   const color = (featureProps && featureProps._color) || layerObj.color  || '#1a56db';
-  const size  = 28;
+  const scale = layerObj.size != null ? layerObj.size : 1;
+  const size  = Math.round(28 * scale);
   return L.divIcon({
     className: '',
     html: `<div style="filter:drop-shadow(0 1px 3px rgba(0,0,0,.4))">${kmlSvgIcon(sym, color, size)}</div>`,
@@ -337,6 +338,7 @@ function kmlOpenStyleModal(id) {
       <input type="radio" name="ldash" value="${k}" ${curDash===k?'checked':''}> ${s.label}</label>`).join('');
   const curMinZ = l.min_zoom != null ? l.min_zoom : 0;
   const curMaxZ = l.max_zoom != null ? l.max_zoom : 20;
+  const curSize = l.size     != null ? l.size     : 1;
   const curZ    = Math.round(map.getZoom());
   showModal(`🎨 Стиль слоя — ${esc(l.name)}`,`
     <div style="display:flex;gap:12px;margin-bottom:12px;align-items:flex-start">
@@ -345,19 +347,30 @@ function kmlOpenStyleModal(id) {
       </div>
       <div style="flex:1"><label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">Линии/полигоны</label>${lineHtml}</div>
     </div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:11px;font-weight:600;display:block;margin-bottom:6px">
+        Размер значков: <b id="kml-size-val">${curSize.toFixed(1)}×</b>
+      </label>
+      <input type="range" id="kml-size" min="0.3" max="3" step="0.1" value="${curSize}"
+        style="width:100%;accent-color:var(--acc)"
+        oninput="document.getElementById('kml-size-val').textContent=parseFloat(this.value).toFixed(1)+'×'">
+      <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--tx3);margin-top:2px">
+        <span>0.3× (мелко)</span><span>1.0× (норма)</span><span>3.0× (крупно)</span>
+      </div>
+    </div>
     <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:12px">
       <div style="flex:1">
-        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">Мин. масштаб (зум)</label>
+        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">Мин. зум</label>
         <input type="number" id="kml-min-zoom" min="0" max="20" value="${curMinZ}" style="width:100%;padding:5px 7px;border:1.5px solid var(--bd);border-radius:var(--r);font-size:12px;background:var(--s);color:var(--tx)">
       </div>
       <div style="flex:1">
-        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">Макс. масштаб (зум)</label>
+        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">Макс. зум</label>
         <input type="number" id="kml-max-zoom" min="0" max="20" value="${curMaxZ}" style="width:100%;padding:5px 7px;border:1.5px solid var(--bd);border-radius:var(--r);font-size:12px;background:var(--s);color:var(--tx)">
       </div>
       <div style="font-size:10px;color:var(--tx3);padding-bottom:7px;white-space:nowrap">сейчас: <b>${curZ}</b></div>
     </div>
     <label style="font-size:11px;font-weight:600;display:block;margin-bottom:6px">Условный знак для точек</label>
-    <div id="kml-sym-grid" style="max-height:260px;overflow-y:auto;padding-right:4px">${symHtml}</div>`,
+    <div id="kml-sym-grid" style="max-height:220px;overflow-y:auto;padding-right:4px">${symHtml}</div>`,
     [{label:'Отмена',cls:'bs',fn:closeModal},
      {label:'✅ Применить',cls:'bp',fn:async()=>{
        const color=document.getElementById('kml-style-color').value;
@@ -366,9 +379,10 @@ function kmlOpenStyleModal(id) {
        const dash=document.querySelector('input[name="ldash"]:checked')?.value||'solid';
        const minZ=Math.max(0,Math.min(20,parseInt(document.getElementById('kml-min-zoom').value)||0));
        const maxZ=Math.max(0,Math.min(20,parseInt(document.getElementById('kml-max-zoom').value)||20));
-       l.color=color;l.symbol=sym;l.line_dash=dash;l.min_zoom=minZ;l.max_zoom=maxZ;
+       const sz=Math.max(0.3,Math.min(3,parseFloat(document.getElementById('kml-size').value)||1));
+       l.color=color;l.symbol=sym;l.line_dash=dash;l.min_zoom=minZ;l.max_zoom=maxZ;l.size=sz;
        await fetch(`${API}/layers/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},
-         body:JSON.stringify({name:l.name,color,visible:l.visible?1:0,symbol:sym,group_id:l.group_id||'',line_dash:dash,min_zoom:minZ,max_zoom:maxZ})});
+         body:JSON.stringify({name:l.name,color,visible:l.visible?1:0,symbol:sym,group_id:l.group_id||'',line_dash:dash,min_zoom:minZ,max_zoom:maxZ,size:sz})});
        closeModal();renderLayerGroups();renderKmlPanel();toast('Стиль применён','ok');
      }}]);
 }

@@ -22,9 +22,10 @@ async function selectBase(id){
 }
 
 function openPanel(isBase){
+  const wasOpen=document.getElementById('panel').classList.contains('open');
   document.getElementById('panel').classList.add('open');
   document.getElementById('map').classList.add('shifted');
-  setTimeout(()=>map.invalidateSize(),260);
+  if(!wasOpen) setTimeout(()=>map.invalidateSize({animate:false,pan:false}),260);
   document.getElementById('ph-title').textContent=currentObj.name;
   const ph=document.getElementById('phdr');
   ph.style.borderBottom=isBase?'3px solid var(--bpb)':'';
@@ -36,7 +37,7 @@ function openPanel(isBase){
 function closePanel(){
   document.getElementById('panel').classList.remove('open');
   document.getElementById('map').classList.remove('shifted');
-  setTimeout(()=>map.invalidateSize(),260);
+  setTimeout(()=>map.invalidateSize({animate:false,pan:false}),260);
   currentObj=null;currentType=null;activeSiteId=null;
   renderSidebar();
   try{repaintMap();}catch(e){}
