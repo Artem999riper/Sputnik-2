@@ -345,14 +345,37 @@ async function exportExcel(siteId){
         SEM_LABEL[sem.type]||'',v.geojson?'Есть':'—',sem.cleanNotes];
     })],'Объёмы');
 
+  // ── Карта объёмов (нужна и для семантики, и для выполнения) ──
+  const volMap={};
+  (s.volumes||[]).forEach(v=>{volMap[v.id]=v;});
+
   // ── Семантика объёмов (только точки с заполненным типом) ──
-  // Семантика хранится двумя способами:
-  // 1. В volumes.notes как __SEM__:... (openVolPointSemantics — для всего объёма целиком)
-  // 2. В feature.properties.sem внутри GeoJSON (openFeatureSemantics — для каждой точки)
-  const semRows=[['Объём','№ точки','Категория','Тип','Глубина (м)','Диаметр (мм)','УГВ (м)','Дата','Исполнитель','Описание / Примечание']];
+  // Семантика хранится в трёх местах:
+  // 1. volumes.notes — __SEM__:... (openVolPointSemantics, для всего объёма)
+  // 2. volumes.geojson → features[].properties.sem (openFeatureSemantics без vpId)
+  // 3. vol_progress.geojson → features[].properties.sem (openFeatureSemantics с vpId — основной случай)
+  const semRows=[['Объём','Дата записи','Категория','Тип','Глубина (м)','Диаметр (мм)','УГВ (м)','Дата','Исполнитель','Описание / Примечание']];
+
+  const extractSemFromGJ=(gjStr,name,cat,dateLabel)=>{
+    if(!gjStr)return;
+    try{
+      const gj=JSON.parse(gjStr);
+      const features=gj.type==='FeatureCollection'?gj.features:(gj.type==='Feature'?[gj]:[]);
+      features.forEach(feat=>{
+        const sem=(feat.properties&&feat.properties.sem)||{};
+        if(!sem.type)return;
+        const d=sem.data||{};
+        semRows.push([name,dateLabel,cat,
+          SEM_LABEL[sem.type]||sem.type,
+          d.depth||'',d.diam||'',d.ugv||'',
+          d.date||'',d.exec||'',
+          d.desc||d.note||'']);
+      });
+    }catch(e){}
+  };
+
   (s.volumes||[]).forEach(v=>{
     const cat=v.category==='geology'?'Геология':'Геодезия';
-
     // Способ 1: семантика в volumes.notes
     const noteSem=parseSem(v.notes);
     if(noteSem.type){
@@ -363,30 +386,22 @@ async function exportExcel(siteId){
         d.date||'',d.exec||'',
         d.desc||d.note||noteSem.cleanNotes]);
     }
-
-    // Способ 2: семантика в feature.properties.sem внутри GeoJSON
-    if(v.geojson){
-      try{
-        const gj=JSON.parse(v.geojson);
-        const features=gj.type==='FeatureCollection'?gj.features:(gj.type==='Feature'?[gj]:[]);
-        features.forEach((feat,i)=>{
-          const sem=(feat.properties&&feat.properties.sem)||{};
-          if(!sem.type)return;
-          const d=sem.data||{};
-          semRows.push([v.name,i+1,cat,
-            SEM_LABEL[sem.type]||sem.type,
-            d.depth||'',d.diam||'',d.ugv||'',
-            d.date||'',d.exec||'',
-            d.desc||d.note||'']);
-        });
-      }catch(e){}
-    }
+    // Способ 2: семантика в volumes.geojson
+    extractSemFromGJ(v.geojson,v.name,cat,'—');
   });
+
+  // Способ 3: семантика в vol_progress.geojson (главный источник при работе с прогрессом)
+  (s.vol_progress||[]).forEach(p=>{
+    if(p.row_type&&p.row_type!=='fact')return;
+    const vol=volMap[p.volume_id];
+    if(!vol||!p.geojson)return;
+    const cat=vol.category==='geology'?'Геология':'Геодезия';
+    extractSemFromGJ(p.geojson,vol.name,cat,fmt(p.work_date));
+  });
+
   if(semRows.length>1)sh(semRows,'Семантика объёмов');
 
   // ── Выполнение объёмов (vol_progress, только факт) ────────
-  const volMap={};
-  (s.volumes||[]).forEach(v=>{volMap[v.id]=v;});
   // Итог по каждому объёму для расчёта %
   const volDone={};
   (s.vol_progress||[]).forEach(p=>{
