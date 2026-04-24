@@ -27,6 +27,7 @@ function tabSiteOv(pb){
     <button class="btn bp bsm" onclick="openEditSiteModal('${s.id}')">✏️ Ред.</button>
     <button class="btn bs bsm" onclick="openAssignBasesModal('${s.id}')">🔗 Базы</button>
     <button class="btn bs bsm" onclick="exportExcel('${s.id}')">📤 Excel</button>
+    <button class="btn bs bsm" onclick="openHtmlExportModal('${s.id}')">📄 HTML</button>
     <button class="btn bd bsm" onclick="deleteSite('${s.id}')">🗑</button>
   </div>`;
 }
