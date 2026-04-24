@@ -2,55 +2,89 @@
 // HTML-экспорт объёмов в выбранной области
 // ═══════════════════════════════════════════════════════════
 
-var _htmlExDraw  = false;
-var _htmlExStart = null;
-var _htmlExTmp   = null;
+var _htmlExDraw   = false;
+var _htmlExStart  = null;
+var _htmlExTmp    = null;
 var _htmlExSiteId = null;
+var _htmlExOpts   = {tile:'map', kmlIds:[]};
 
-// ── Открыть диалог выбора области ────────────────────────
+// ── Открыть диалог выбора параметров ─────────────────────
 function openHtmlExportModal(siteId) {
   _htmlExSiteId = siteId;
+
+  const kmlLayers = (layers||[]).filter(l => l.geojson);
+  const kmlBlock = kmlLayers.length === 0 ? '' :
+    `<div style="margin-bottom:14px">
+      <div style="font-size:11px;font-weight:700;color:var(--tx2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px">KML слои</div>
+      <div style="max-height:110px;overflow-y:auto;display:flex;flex-direction:column;gap:2px">
+        ${kmlLayers.map(l=>`
+          <label style="display:flex;align-items:center;gap:7px;padding:3px 0;font-size:11px;cursor:pointer;user-select:none">
+            <input type="checkbox" id="kml-exp-${l.id}" checked>
+            <span style="width:10px;height:10px;border-radius:50%;background:${l.color||'#1a56db'};flex-shrink:0;border:1px solid rgba(0,0,0,.15)"></span>
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(l.name)}</span>
+          </label>`).join('')}
+      </div>
+    </div>`;
+
+  const radioStyle = 'flex:1;min-width:100px;padding:8px 10px;border:1.5px solid var(--bd);border-radius:8px;cursor:pointer;font-size:11px;font-weight:600;display:flex;align-items:center;gap:6px;transition:border-color .15s';
+
   showModal('📄 HTML-экспорт объёмов',
-    '<p style="font-size:12px;color:var(--tx2);margin-bottom:12px">Выберите область для выгрузки точечных объёмов в автономный HTML-файл.</p>'
-    +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
-    +'<div style="flex:1;min-width:130px;padding:12px;border:1.5px solid var(--bd);border-radius:10px;cursor:pointer;transition:border-color .15s" '
-    +'onclick="closeModal();_htmlExFromView()">'
-    +'<div style="font-size:22px;text-align:center;margin-bottom:4px">🗺</div>'
-    +'<div style="font-size:12px;font-weight:700;text-align:center">Текущий вид</div>'
-    +'<div style="font-size:10px;color:var(--tx3);text-align:center;margin-top:3px">Экспорт видимой области карты</div>'
-    +'</div>'
-    +'<div style="flex:1;min-width:130px;padding:12px;border:1.5px solid var(--bd);border-radius:10px;cursor:pointer;transition:border-color .15s" '
-    +'onclick="closeModal();_htmlExStartDraw()">'
-    +'<div style="font-size:22px;text-align:center;margin-bottom:4px">✏️</div>'
-    +'<div style="font-size:12px;font-weight:700;text-align:center">Нарисовать</div>'
-    +'<div style="font-size:10px;color:var(--tx3);text-align:center;margin-top:3px">Выделить прямоугольник на карте</div>'
-    +'</div>'
-    +'</div>',
+    `<div style="font-size:12px">
+      <div style="margin-bottom:14px">
+        <div style="font-size:11px;font-weight:700;color:var(--tx2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px">Подложка (по умолчанию)</div>
+        <div style="display:flex;gap:6px">
+          <label style="${radioStyle}"><input type="radio" name="htile" value="map" checked> 🗺 Карта</label>
+          <label style="${radioStyle}"><input type="radio" name="htile" value="sat"> 🛰 Спутник</label>
+        </div>
+        <div style="font-size:10px;color:var(--tx3);margin-top:4px">В HTML-файле будет кнопка переключения подложки</div>
+      </div>
+      ${kmlBlock}
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--tx2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px">Область</div>
+        <div style="display:flex;gap:6px">
+          <div style="flex:1;padding:10px;border:1.5px solid var(--bd);border-radius:8px;cursor:pointer;text-align:center" onclick="closeModal();_htmlExApplyOpts();_htmlExFromView()">
+            <div style="font-size:20px">🗺</div>
+            <div style="font-size:11px;font-weight:700;margin-top:2px">Текущий вид</div>
+          </div>
+          <div style="flex:1;padding:10px;border:1.5px solid var(--bd);border-radius:8px;cursor:pointer;text-align:center" onclick="closeModal();_htmlExApplyOpts();_htmlExStartDraw()">
+            <div style="font-size:20px">✏️</div>
+            <div style="font-size:11px;font-weight:700;margin-top:2px">Нарисовать</div>
+          </div>
+        </div>
+      </div>
+    </div>`,
     [{label:'Отмена',cls:'bs',fn:closeModal}]
   );
 }
 
-// ── Экспорт по текущему виду карты ───────────────────────
+function _htmlExApplyOpts() {
+  const tileEl = document.querySelector('input[name="htile"]:checked');
+  _htmlExOpts.tile   = tileEl ? tileEl.value : 'map';
+  _htmlExOpts.kmlIds = (layers||[])
+    .filter(l => l.geojson && document.getElementById('kml-exp-'+l.id)?.checked)
+    .map(l => l.id);
+}
+
+// ── Экспорт по текущему виду ──────────────────────────────
 function _htmlExFromView() {
-  const bounds = map.getBounds();
-  const bbox = {
-    minLat: bounds.getSouth(), maxLat: bounds.getNorth(),
-    minLng: bounds.getWest(),  maxLng: bounds.getEast()
-  };
-  generateHtmlExport(_htmlExSiteId, bbox);
+  const b = map.getBounds();
+  generateHtmlExport(_htmlExSiteId, {
+    minLat:b.getSouth(), maxLat:b.getNorth(),
+    minLng:b.getWest(),  maxLng:b.getEast()
+  });
 }
 
 // ── Рисование прямоугольника ──────────────────────────────
 function _htmlExStartDraw() {
   _htmlExDraw  = false;
   _htmlExStart = null;
-  if (_htmlExTmp) { try { map.removeLayer(_htmlExTmp); } catch(e) {} _htmlExTmp = null; }
+  if (_htmlExTmp) { try{map.removeLayer(_htmlExTmp);}catch(e){} _htmlExTmp=null; }
 
   map.getContainer().style.cursor = 'crosshair';
   const bnr = document.getElementById('bnr');
   if (bnr) {
     bnr.className = 'show draw';
-    document.getElementById('bnr-t').textContent = '📄 Кликните — первый угол области HTML-экспорта (ПКМ — отмена)';
+    document.getElementById('bnr-t').textContent = '📄 Кликните — первый угол области (ПКМ — отмена)';
     bnr.style.display = 'flex';
   }
   map.once('click', _htmlExFirstClick);
@@ -67,51 +101,42 @@ function _htmlExFirstClick(e) {
 
 function _htmlExMouseMove(e) {
   if (!_htmlExStart) return;
-  const bounds = L.latLngBounds(_htmlExStart, e.latlng);
-  if (_htmlExTmp) {
-    _htmlExTmp.setBounds(bounds);
-  } else {
-    _htmlExTmp = L.rectangle(bounds, {
-      color: '#6366f1', weight: 2, dashArray: '6 4',
-      fillColor: '#6366f1', fillOpacity: 0.12
-    }).addTo(map);
-  }
+  const b = L.latLngBounds(_htmlExStart, e.latlng);
+  if (_htmlExTmp) { _htmlExTmp.setBounds(b); }
+  else { _htmlExTmp = L.rectangle(b,{color:'#6366f1',weight:2,dashArray:'6 4',fillColor:'#6366f1',fillOpacity:.12}).addTo(map); }
 }
 
 function _htmlExSecondClick(e) {
   map.off('mousemove', _htmlExMouseMove);
   map.off('contextmenu', _htmlExCancel);
-  const bounds = L.latLngBounds(_htmlExStart, e.latlng);
-  if (_htmlExTmp) { map.removeLayer(_htmlExTmp); _htmlExTmp = null; }
+  const b = L.latLngBounds(_htmlExStart, e.latlng);
+  if (_htmlExTmp) { map.removeLayer(_htmlExTmp); _htmlExTmp=null; }
   map.getContainer().style.cursor = '';
   const bnr = document.getElementById('bnr');
   if (bnr) bnr.className = '';
-
-  const bbox = {
-    minLat: bounds.getSouth(), maxLat: bounds.getNorth(),
-    minLng: bounds.getWest(),  maxLng: bounds.getEast()
-  };
-  generateHtmlExport(_htmlExSiteId, bbox);
+  generateHtmlExport(_htmlExSiteId, {
+    minLat:b.getSouth(), maxLat:b.getNorth(),
+    minLng:b.getWest(),  maxLng:b.getEast()
+  });
 }
 
 function _htmlExCancel() {
   map.off('mousemove', _htmlExMouseMove);
   map.off('click', _htmlExFirstClick);
   map.off('click', _htmlExSecondClick);
-  if (_htmlExTmp) { try { map.removeLayer(_htmlExTmp); } catch(e) {} _htmlExTmp = null; }
+  if (_htmlExTmp) { try{map.removeLayer(_htmlExTmp);}catch(e){} _htmlExTmp=null; }
   map.getContainer().style.cursor = '';
   const bnr = document.getElementById('bnr');
   if (bnr) bnr.className = '';
 }
 
-// ── Основная функция генерации ────────────────────────────
+// ── Главная функция генерации ─────────────────────────────
 async function generateHtmlExport(siteId, bbox) {
-  toast('Готовлю HTML...', 'ok');
-  const s = await fetch(`${API}/sites/${siteId}`).then(r => r.json());
+  toast('Готовлю HTML...','ok');
+  const s = await fetch(`${API}/sites/${siteId}`).then(r=>r.json());
 
-  const inBbox = (lat, lng) =>
-    lat >= bbox.minLat && lat <= bbox.maxLat &&
-    lng >= bbox.minLng && lng <= bbox.maxLng;
+  const inBbox = (lat,lng) =>
+    lat>=bbox.minLat && lat<=bbox.maxLat && lng>=bbox.minLng && lng<=bbox.maxLng;
 
   const SEM_LABEL = {
     borehole:'Скважина', pit:'Шурф',
@@ -120,94 +145,118 @@ async function generateHtmlExport(siteId, bbox) {
   };
 
   const volMap = {};
-  (s.volumes||[]).forEach(v => { volMap[v.id] = v; });
+  (s.volumes||[]).forEach(v => { volMap[v.id]=v; });
 
-  // Точки для экспорта
+  // ── Точки объёмов ─────────────────────────────────────
   const pts = [];
-
   const collectFromGJ = (gjStr, volName, color, date, cat) => {
     if (!gjStr) return;
     try {
       const gj = JSON.parse(gjStr);
-      const features = gj.type==='FeatureCollection' ? gj.features
-                     : gj.type==='Feature'            ? [gj] : [];
-      features.forEach(feat => {
-        if (!feat.geometry || feat.geometry.type !== 'Point') return;
-        const [lng, lat] = feat.geometry.coordinates;
-        if (!inBbox(lat, lng)) return;
-        const sem = (feat.properties && feat.properties.sem) || {};
-        pts.push({
-          lat, lng,
-          color: (feat.properties && feat.properties.color) || color || '#1a56db',
-          volName, date: date || '', sem, cat
-        });
+      const feats = gj.type==='FeatureCollection'?gj.features:gj.type==='Feature'?[gj]:[];
+      feats.forEach(feat => {
+        if (!feat.geometry||feat.geometry.type!=='Point') return;
+        const [lng,lat] = feat.geometry.coordinates;
+        if (!inBbox(lat,lng)) return;
+        const sem = (feat.properties&&feat.properties.sem)||{};
+        pts.push({lat,lng,
+          color:(feat.properties&&feat.properties.color)||color||'#1a56db',
+          volName, date:date||'', sem, cat});
       });
     } catch(e) {}
   };
-
-  // Из vol_progress (главный источник)
   (s.vol_progress||[]).forEach(p => {
-    if (p.row_type && p.row_type !== 'fact') return;
+    if (p.row_type&&p.row_type!=='fact') return;
     const vol = volMap[p.volume_id];
     if (!vol) return;
     collectFromGJ(p.geojson, vol.name, vol.color, p.work_date, vol.category);
   });
+  (s.volumes||[]).forEach(v => collectFromGJ(v.geojson, v.name, v.color, null, v.category));
 
-  // Из volumes.geojson (если заполнен)
-  (s.volumes||[]).forEach(v => {
-    collectFromGJ(v.geojson, v.name, v.color, null, v.category);
-  });
+  // ── KML слои ──────────────────────────────────────────
+  const kmlData = (_htmlExOpts.kmlIds||[]).map(id => {
+    const l = (layers||[]).find(x=>x.id===id);
+    if (!l||!l.geojson) return null;
+    let gj; try{gj=JSON.parse(l.geojson);}catch(e){return null;}
+    const dashMap = {solid:null,dashed:'8 4',dotted:'2 4',dashdot:'8 4 2 4'};
+    const feats = (gj.features||[]).filter(feat => {
+      if (!feat.geometry) return false;
+      return _htmlExAnyCoordInBbox(feat.geometry, bbox);
+    }).map(feat => {
+      const sym   = (feat.properties&&feat.properties._sym)||l.symbol||'point';
+      const color = (feat.properties&&feat.properties._color)||l.color||'#1a56db';
+      const svgHtml = feat.geometry.type==='Point'
+        ? `<div style="filter:drop-shadow(0 1px 3px rgba(0,0,0,.4))">${kmlSvgIcon(sym,color,28)}</div>`
+        : null;
+      return {
+        type:'Feature', geometry:feat.geometry,
+        properties:{
+          name:(feat.properties&&(feat.properties.name||feat.properties.Name))||'',
+          _svgHtml:svgHtml
+        }
+      };
+    });
+    if (!feats.length) return null;
+    return {name:l.name, color:l.color||'#1a56db', dashArray:dashMap[l.line_dash]||null, features:feats};
+  }).filter(Boolean);
 
-  if (pts.length === 0) {
-    toast('В выбранной области нет точечных объёмов', 'err');
-    return;
+  if (pts.length===0 && kmlData.length===0) {
+    toast('В выбранной области нет данных','err'); return;
   }
 
   const dateStr = new Date().toLocaleDateString('ru');
-  const html = _buildHtmlExport(s.name, bbox, pts, SEM_LABEL, dateStr);
-
+  const html = _buildHtmlExport(s.name, bbox, pts, kmlData, SEM_LABEL, dateStr, _htmlExOpts);
   const a = document.createElement('a');
-  a.href = 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
+  a.href = 'data:text/html;charset=utf-8,'+encodeURIComponent(html);
   a.download = s.name.replace(/[\/\\:*?"<>|]/g,'_')
-    + '_объёмы_' + new Date().toLocaleDateString('ru').replace(/\./g,'-') + '.html';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  toast('HTML сохранён: ' + pts.length + ' точек', 'ok');
+    +'_объёмы_'+new Date().toLocaleDateString('ru').replace(/\./g,'-')+'.html';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  toast('HTML сохранён: '+(pts.length)+' точек'+(kmlData.length?' + '+kmlData.length+' KML слоёв':''),'ok');
 }
 
-// ── Сборка HTML-строки ────────────────────────────────────
-function _buildHtmlExport(siteName, bbox, pts, SEM_LABEL, dateStr) {
+// Проверяем, есть ли хоть одна координата геометрии в bbox
+function _htmlExAnyCoordInBbox(geom, bbox) {
+  const flat = c => {
+    if (!Array.isArray(c)) return [];
+    if (typeof c[0]==='number') return [c];
+    return c.flatMap(flat);
+  };
+  return flat(geom.coordinates).some(([lng,lat]) =>
+    lat>=bbox.minLat&&lat<=bbox.maxLat&&lng>=bbox.minLng&&lng<=bbox.maxLng);
+}
+
+// ── Сборка HTML ───────────────────────────────────────────
+function _buildHtmlExport(siteName, bbox, pts, kmlData, SEM_LABEL, dateStr, opts) {
   const he = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
-  // Данные для карты (без esc — будет JSON.stringify)
   const mapData = pts.map((p,i) => ({
-    i: i+1, lat: p.lat, lng: p.lng, color: p.color,
-    n: p.volName, dt: p.date,
-    cat: p.cat==='geology' ? 'Геология' : 'Геодезия',
-    sl: SEM_LABEL[p.sem.type] || p.sem.type || '',
-    d: p.sem.data || {}
+    i:i+1, lat:p.lat, lng:p.lng, color:p.color,
+    n:p.volName, dt:p.date,
+    cat:p.cat==='geology'?'Геология':'Геодезия',
+    sl:SEM_LABEL[p.sem.type]||p.sem.type||'',
+    d:p.sem.data||{}
   }));
 
-  // Строки таблицы
   const rows = pts.map((p,i) => {
-    const d = p.sem.data || {};
-    const cat = p.cat==='geology' ? 'Геология' : 'Геодезия';
-    const sl  = SEM_LABEL[p.sem.type] || p.sem.type || '—';
+    const d = p.sem.data||{};
+    const cat = p.cat==='geology'?'Геология':'Геодезия';
+    const sl  = SEM_LABEL[p.sem.type]||p.sem.type||'—';
     return `<tr>
       <td>${i+1}</td>
       <td>${he(p.volName)}</td>
       <td>${he(p.date||'—')}</td>
       <td>${cat}</td>
       <td>${he(sl)}</td>
-      <td>${he(d.depth||'')}</td>
-      <td>${he(d.diam||'')}</td>
-      <td>${he(d.ugv||'')}</td>
-      <td>${he(d.date||'')}</td>
-      <td>${he(d.exec||'')}</td>
+      <td>${he(d.depth||'')}</td><td>${he(d.diam||'')}</td><td>${he(d.ugv||'')}</td>
+      <td>${he(d.date||'')}</td><td>${he(d.exec||'')}</td>
       <td>${he(d.desc||d.note||'')}</td>
+      <td style="font-family:monospace;font-size:10px;white-space:nowrap">${p.lat.toFixed(6)}</td>
+      <td style="font-family:monospace;font-size:10px;white-space:nowrap">${p.lng.toFixed(6)}</td>
     </tr>`;
   }).join('');
+
+  const kmlJson = JSON.stringify(kmlData);
+  const defTile = (opts&&opts.tile==='sat') ? 'sat' : 'map';
 
   return `<!DOCTYPE html>
 <html lang="ru">
@@ -231,22 +280,26 @@ th{background:#334155;color:#fff;padding:7px 8px;text-align:left;white-space:now
 td{padding:5px 8px;border-bottom:1px solid #f1f5f9;vertical-align:top}
 tr:last-child td{border-bottom:none}
 tr:hover td{background:#f8fafc}
-#footer{padding:8px 20px;font-size:10px;color:#94a3b8;text-align:center;background:#f1f5f9}
-@media print{#map{height:40vh}#footer{display:none}}
+#footer{padding:8px 20px;font-size:10px;color:#94a3b8;text-align:center}
+.tile-btn{position:absolute;top:80px;right:10px;z-index:1000;background:#fff;border:2px solid rgba(0,0,0,.2);border-radius:4px;width:34px;height:34px;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 5px rgba(0,0,0,.2)}
+@media print{#map{height:40vh}#footer{display:none}.tile-btn{display:none}}
 </style>
 </head>
 <body>
 <div id="hdr">
   <div>
     <h1>${he(siteName)}</h1>
-    <div class="sub">Экспорт ${dateStr} · ${pts.length} точек</div>
+    <div class="sub">Экспорт ${dateStr} · ${pts.length} точек${kmlData.length?' · '+kmlData.length+' KML слоёв':''}</div>
   </div>
   <div class="sub" style="text-align:right">
     ${bbox.minLat.toFixed(5)}&thinsp;…&thinsp;${bbox.maxLat.toFixed(5)} с.ш.<br>
     ${bbox.minLng.toFixed(5)}&thinsp;…&thinsp;${bbox.maxLng.toFixed(5)} в.д.
   </div>
 </div>
-<div id="map"></div>
+<div style="position:relative">
+  <div id="map"></div>
+  <button class="tile-btn" id="tile-toggle" title="Переключить подложку">🛰</button>
+</div>
 <div id="main">
   <h2>📍 Точки в области (${pts.length})</h2>
   <div class="tbl-wrap">
@@ -255,52 +308,96 @@ tr:hover td{background:#f8fafc}
       <th>#</th><th>Объём</th><th>Дата записи</th><th>Категория</th><th>Тип</th>
       <th>Глубина (м)</th><th>Диаметр (мм)</th><th>УГВ (м)</th>
       <th>Дата</th><th>Исполнитель</th><th>Описание</th>
+      <th>Широта</th><th>Долгота</th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>
   </div>
 </div>
-<div id="footer">ПурГеоКом · Экспорт ${he(siteName)} · ${dateStr}</div>
+<div id="footer">ПурГеоКом · ${he(siteName)} · ${dateStr}</div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>
 <script>
 (function(){
 var PTS=${JSON.stringify(mapData)};
+var KML=${kmlJson};
+var DEF_TILE='${defTile}';
+
 var map=L.map('map',{attributionControl:false});
-L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{
-  subdomains:'abcd',maxZoom:20
-}).addTo(map);
-var markers=[];
+
+var TILES={
+  map:L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:20}),
+  sat:L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:20})
+};
+var curTile=DEF_TILE;
+TILES[curTile].addTo(map);
+
+// Кнопка переключения подложки
+var btn=document.getElementById('tile-toggle');
+btn.textContent=curTile==='map'?'🛰':'🗺';
+btn.onclick=function(){
+  map.removeLayer(TILES[curTile]);
+  curTile=curTile==='map'?'sat':'map';
+  TILES[curTile].addTo(map);
+  btn.textContent=curTile==='map'?'🛰':'🗺';
+};
+
+// Точки объёмов
+var allBounds=[];
 PTS.forEach(function(p){
+  allBounds.push([p.lat,p.lng]);
   var c=p.color||'#1a56db';
   var icon=L.divIcon({
     className:'',
-    html:'<div style="width:14px;height:14px;border-radius:50%;background:'+c+
-      ';border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.45)"></div>',
-    iconSize:[14,14],iconAnchor:[7,7],popupAnchor:[0,-8]
+    html:'<div style="width:14px;height:14px;border-radius:50%;background:'+c+';border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.45)"></div>',
+    iconSize:[14,14],iconAnchor:[7,7],popupAnchor:[0,-9]
   });
-  var popup='<div style="font-size:12px;line-height:1.6;min-width:160px">'
-    +'<b>'+p.n+'</b>';
-  if(p.dt) popup+='<br><span style="color:#64748b;font-size:10px">'+p.dt+'</span>';
-  if(p.cat) popup+='<br><span style="color:#64748b;font-size:10px">'+p.cat+'</span>';
-  if(p.sl)  popup+='<br><span style="color:'+c+';font-weight:600">'+p.sl+'</span>';
   var d=p.d||{};
-  if(d.depth) popup+='<br>⬇ Глубина: <b>'+d.depth+' м</b>';
-  if(d.diam)  popup+='<br>⌀ Диаметр: <b>'+d.diam+' мм</b>';
-  if(d.ugv)   popup+='<br>💧 УГВ: <b>'+d.ugv+' м</b>';
-  if(d.date)  popup+='<br>📅 '+d.date;
-  if(d.exec)  popup+='<br>👤 '+d.exec;
-  if(d.desc||d.note) popup+='<br>📋 '+(d.desc||d.note);
-  popup+='</div>';
-  var m=L.marker([p.lat,p.lng],{icon:icon})
-    .bindPopup(popup)
-    .bindTooltip('#'+p.i+' '+p.n,{direction:'top',offset:[0,-8]})
+  var pop='<div style="font-size:12px;line-height:1.65;min-width:170px">'
+    +'<b>'+p.n+'</b>';
+  if(p.dt) pop+='<br><span style="color:#64748b;font-size:10px">'+p.dt+'</span>';
+  if(p.cat) pop+='<br><span style="color:#64748b;font-size:10px">'+p.cat+'</span>';
+  if(p.sl)  pop+='<br><span style="color:'+c+';font-weight:600">'+p.sl+'</span>';
+  if(d.depth) pop+='<br>⬇ Глубина: <b>'+d.depth+' м</b>';
+  if(d.diam)  pop+='<br>⌀ Диаметр: <b>'+d.diam+' мм</b>';
+  if(d.ugv)   pop+='<br>💧 УГВ: <b>'+d.ugv+' м</b>';
+  if(d.date)  pop+='<br>📅 '+d.date;
+  if(d.exec)  pop+='<br>👤 '+d.exec;
+  if(d.desc||d.note) pop+='<br>📋 '+(d.desc||d.note);
+  pop+='<br><span style="font-size:10px;color:#94a3b8;font-family:monospace">'+p.lat.toFixed(6)+', '+p.lng.toFixed(6)+'</span>';
+  pop+='<\/div>';
+  L.marker([p.lat,p.lng],{icon:icon})
+    .bindPopup(pop)
+    .bindTooltip('#'+p.i+' '+p.n,{direction:'top',offset:[0,-9]})
     .addTo(map);
-  markers.push([p.lat,p.lng]);
 });
-if(markers.length===1){
-  map.setView(markers[0],16);
-}else if(markers.length>1){
-  map.fitBounds(L.latLngBounds(markers),{padding:[30,30]});
+
+// KML слои
+KML.forEach(function(lyr){
+  L.geoJSON({type:'FeatureCollection',features:lyr.features},{
+    pointToLayer:function(feat,ll){
+      if(feat.properties._svgHtml){
+        return L.marker(ll,{icon:L.divIcon({className:'',html:feat.properties._svgHtml,iconSize:[28,28],iconAnchor:[14,14],popupAnchor:[0,-14]})});
+      }
+      return L.circleMarker(ll,{radius:7,fillColor:lyr.color,color:'#fff',weight:2,fillOpacity:.85});
+    },
+    style:function(){
+      return {color:lyr.color,weight:2,dashArray:lyr.dashArray,fillColor:lyr.color,fillOpacity:.15};
+    },
+    onEachFeature:function(feat,layer){
+      var nm=feat.properties.name;
+      if(nm) layer.bindTooltip(nm,{direction:'top'});
+    }
+  }).addTo(map);
+});
+
+if(allBounds.length===1){map.setView(allBounds[0],16);}
+else if(allBounds.length>1){map.fitBounds(L.latLngBounds(allBounds),{padding:[30,30]});}
+else if(KML.length){
+  var kbounds=[];
+  KML.forEach(function(l){l.features.forEach(function(f){
+    if(f.geometry.type==='Point') kbounds.push([f.geometry.coordinates[1],f.geometry.coordinates[0]]);
+  });});
+  if(kbounds.length) map.fitBounds(L.latLngBounds(kbounds),{padding:[30,30]});
 }
 })();
 <\/script>
