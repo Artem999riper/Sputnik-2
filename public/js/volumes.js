@@ -346,16 +346,41 @@ async function exportExcel(siteId){
     })],'Объёмы');
 
   // ── Семантика объёмов (только точки с заполненным типом) ──
-  const semRows=[['Объём','Категория','Тип','Глубина (м)','Диаметр (мм)','УГВ (м)','Дата','Исполнитель','Описание / Примечание']];
+  // Семантика хранится двумя способами:
+  // 1. В volumes.notes как __SEM__:... (openVolPointSemantics — для всего объёма целиком)
+  // 2. В feature.properties.sem внутри GeoJSON (openFeatureSemantics — для каждой точки)
+  const semRows=[['Объём','№ точки','Категория','Тип','Глубина (м)','Диаметр (мм)','УГВ (м)','Дата','Исполнитель','Описание / Примечание']];
   (s.volumes||[]).forEach(v=>{
-    const sem=parseSem(v.notes);
-    if(!sem.type)return;
-    const d=sem.data||{};
-    semRows.push([v.name,v.category==='geology'?'Геология':'Геодезия',
-      SEM_LABEL[sem.type]||sem.type,
-      d.depth||'',d.diam||'',d.ugv||'',
-      d.date||'',d.exec||'',
-      d.desc||d.note||sem.cleanNotes]);
+    const cat=v.category==='geology'?'Геология':'Геодезия';
+
+    // Способ 1: семантика в volumes.notes
+    const noteSem=parseSem(v.notes);
+    if(noteSem.type){
+      const d=noteSem.data||{};
+      semRows.push([v.name,'—',cat,
+        SEM_LABEL[noteSem.type]||noteSem.type,
+        d.depth||'',d.diam||'',d.ugv||'',
+        d.date||'',d.exec||'',
+        d.desc||d.note||noteSem.cleanNotes]);
+    }
+
+    // Способ 2: семантика в feature.properties.sem внутри GeoJSON
+    if(v.geojson){
+      try{
+        const gj=JSON.parse(v.geojson);
+        const features=gj.type==='FeatureCollection'?gj.features:(gj.type==='Feature'?[gj]:[]);
+        features.forEach((feat,i)=>{
+          const sem=(feat.properties&&feat.properties.sem)||{};
+          if(!sem.type)return;
+          const d=sem.data||{};
+          semRows.push([v.name,i+1,cat,
+            SEM_LABEL[sem.type]||sem.type,
+            d.depth||'',d.diam||'',d.ugv||'',
+            d.date||'',d.exec||'',
+            d.desc||d.note||'']);
+        });
+      }catch(e){}
+    }
   });
   if(semRows.length>1)sh(semRows,'Семантика объёмов');
 
