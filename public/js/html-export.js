@@ -265,10 +265,9 @@ tr:hover td{background:#f8fafc}
 <script>
 (function(){
 var PTS=${JSON.stringify(mapData)};
-var map=L.map('map');
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-  attribution:'&copy; <a href="https://openstreetmap.org">OpenStreetMap</a>',
-  maxZoom:19
+var map=L.map('map',{attributionControl:false});
+L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{
+  subdomains:'abcd',maxZoom:20
 }).addTo(map);
 var markers=[];
 PTS.forEach(function(p){
