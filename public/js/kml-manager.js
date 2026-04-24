@@ -335,6 +335,9 @@ function kmlOpenStyleModal(id) {
   const lineHtml=Object.entries(KML_LINE_STYLES).map(([k,s])=>
     `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:3px 0">
       <input type="radio" name="ldash" value="${k}" ${curDash===k?'checked':''}> ${s.label}</label>`).join('');
+  const curMinZ = l.min_zoom != null ? l.min_zoom : 0;
+  const curMaxZ = l.max_zoom != null ? l.max_zoom : 20;
+  const curZ    = Math.round(map.getZoom());
   showModal(`🎨 Стиль слоя — ${esc(l.name)}`,`
     <div style="display:flex;gap:12px;margin-bottom:12px;align-items:flex-start">
       <div><label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">Цвет</label>
@@ -342,17 +345,30 @@ function kmlOpenStyleModal(id) {
       </div>
       <div style="flex:1"><label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">Линии/полигоны</label>${lineHtml}</div>
     </div>
+    <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:12px">
+      <div style="flex:1">
+        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">Мин. масштаб (зум)</label>
+        <input type="number" id="kml-min-zoom" min="0" max="20" value="${curMinZ}" style="width:100%;padding:5px 7px;border:1.5px solid var(--bd);border-radius:var(--r);font-size:12px;background:var(--s);color:var(--tx)">
+      </div>
+      <div style="flex:1">
+        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">Макс. масштаб (зум)</label>
+        <input type="number" id="kml-max-zoom" min="0" max="20" value="${curMaxZ}" style="width:100%;padding:5px 7px;border:1.5px solid var(--bd);border-radius:var(--r);font-size:12px;background:var(--s);color:var(--tx)">
+      </div>
+      <div style="font-size:10px;color:var(--tx3);padding-bottom:7px;white-space:nowrap">сейчас: <b>${curZ}</b></div>
+    </div>
     <label style="font-size:11px;font-weight:600;display:block;margin-bottom:6px">Условный знак для точек</label>
-    <div id="kml-sym-grid" style="max-height:300px;overflow-y:auto;padding-right:4px">${symHtml}</div>`,
+    <div id="kml-sym-grid" style="max-height:260px;overflow-y:auto;padding-right:4px">${symHtml}</div>`,
     [{label:'Отмена',cls:'bs',fn:closeModal},
      {label:'✅ Применить',cls:'bp',fn:async()=>{
        const color=document.getElementById('kml-style-color').value;
        const symEl=document.querySelector('.kml-sym-btn.on');
        const sym=symEl?symEl.dataset.sym:curSym;
        const dash=document.querySelector('input[name="ldash"]:checked')?.value||'solid';
-       l.color=color;l.symbol=sym;l.line_dash=dash;
+       const minZ=Math.max(0,Math.min(20,parseInt(document.getElementById('kml-min-zoom').value)||0));
+       const maxZ=Math.max(0,Math.min(20,parseInt(document.getElementById('kml-max-zoom').value)||20));
+       l.color=color;l.symbol=sym;l.line_dash=dash;l.min_zoom=minZ;l.max_zoom=maxZ;
        await fetch(`${API}/layers/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},
-         body:JSON.stringify({name:l.name,color,visible:l.visible?1:0,symbol:sym,group_id:l.group_id||'',line_dash:dash})});
+         body:JSON.stringify({name:l.name,color,visible:l.visible?1:0,symbol:sym,group_id:l.group_id||'',line_dash:dash,min_zoom:minZ,max_zoom:maxZ})});
        closeModal();renderLayerGroups();renderKmlPanel();toast('Стиль применён','ok');
      }}]);
 }
@@ -634,6 +650,13 @@ function renderLayerGroupsWithSymbols() {
       }).addTo(map);
 
       lGroups[l.id] = g;
+      // Скрыть если текущий зум вне диапазона масштаба
+      const minZ = l.min_zoom != null ? l.min_zoom : 0;
+      const maxZ = l.max_zoom != null ? l.max_zoom : 20;
+      if (minZ > 0 || maxZ < 20) {
+        const z = map.getZoom();
+        if (z < minZ || z > maxZ) map.removeLayer(g);
+      }
     } catch(e) { console.warn('KML render error', l.name, e); }
   });
 
@@ -647,9 +670,22 @@ function renderLayerGroupsWithSymbols() {
 function initKmlManager() {
   loadKmGroups();
   window.renderLayerGroups = renderLayerGroupsWithSymbols;
-  // Перерисовываем карту с иконками — к этому моменту loadAll уже мог отработать
-  // со старой renderLayerGroups без символов
   setTimeout(() => {
     try { renderLayerGroupsWithSymbols(); } catch(e) {}
   }, 50);
+
+  // Показывать/скрывать слои при смене зума (если задан диапазон масштаба)
+  map.on('zoomend', () => {
+    const z = map.getZoom();
+    layers.filter(l => l.visible && !l.site_id).forEach(l => {
+      const minZ = l.min_zoom != null ? l.min_zoom : 0;
+      const maxZ = l.max_zoom != null ? l.max_zoom : 20;
+      if (minZ === 0 && maxZ === 20) return; // без ограничений
+      const g = lGroups[l.id];
+      if (!g) return;
+      const shouldShow = z >= minZ && z <= maxZ;
+      if (shouldShow && !map.hasLayer(g)) g.addTo(map);
+      else if (!shouldShow && map.hasLayer(g)) map.removeLayer(g);
+    });
+  });
 }

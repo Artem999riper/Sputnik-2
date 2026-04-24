@@ -184,6 +184,8 @@ async function getDb() {
   ta("ALTER TABLE kml_layers ADD COLUMN symbol TEXT DEFAULT 'point'");
   ta("ALTER TABLE kml_layers ADD COLUMN group_id TEXT DEFAULT ''");
   ta("ALTER TABLE kml_layers ADD COLUMN line_dash TEXT DEFAULT 'solid'");
+  ta("ALTER TABLE kml_layers ADD COLUMN min_zoom INTEGER DEFAULT 0");
+  ta("ALTER TABLE kml_layers ADD COLUMN max_zoom INTEGER DEFAULT 20");
   ta("CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
 
   return _db;

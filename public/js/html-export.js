@@ -15,7 +15,11 @@ function openHtmlExportModal(siteId) {
   const kmlLayers = (layers||[]).filter(l => l.geojson);
   const kmlBlock = kmlLayers.length === 0 ? '' :
     `<div style="margin-bottom:14px">
-      <div style="font-size:11px;font-weight:700;color:var(--tx2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px">KML слои</div>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+        <span style="font-size:11px;font-weight:700;color:var(--tx2);text-transform:uppercase;letter-spacing:.4px">KML слои</span>
+        <button class="btn bs bxs" onclick="_htmlExToggleAllKml(true)">Все</button>
+        <button class="btn bs bxs" onclick="_htmlExToggleAllKml(false)">Снять</button>
+      </div>
       <div style="max-height:110px;overflow-y:auto;display:flex;flex-direction:column;gap:2px">
         ${kmlLayers.map(l=>`
           <label style="display:flex;align-items:center;gap:7px;padding:3px 0;font-size:11px;cursor:pointer;user-select:none">
@@ -55,6 +59,13 @@ function openHtmlExportModal(siteId) {
     </div>`,
     [{label:'Отмена',cls:'bs',fn:closeModal}]
   );
+}
+
+function _htmlExToggleAllKml(check) {
+  (layers||[]).filter(l => l.geojson).forEach(l => {
+    const cb = document.getElementById('kml-exp-'+l.id);
+    if (cb) cb.checked = check;
+  });
 }
 
 function _htmlExApplyOpts() {
@@ -341,7 +352,26 @@ btn.onclick=function(){
   btn.textContent=curTile==='map'?'🛰':'🗺';
 };
 
-// Точки объёмов
+// KML слои — рисуем ПЕРВЫМИ чтобы оказались под точками объёмов
+KML.forEach(function(lyr){
+  L.geoJSON({type:'FeatureCollection',features:lyr.features},{
+    pointToLayer:function(feat,ll){
+      if(feat.properties._svgHtml){
+        return L.marker(ll,{icon:L.divIcon({className:'',html:feat.properties._svgHtml,iconSize:[28,28],iconAnchor:[14,14],popupAnchor:[0,-14]})});
+      }
+      return L.circleMarker(ll,{radius:7,fillColor:lyr.color,color:'#fff',weight:2,fillOpacity:.85});
+    },
+    style:function(){
+      return {color:lyr.color,weight:2,dashArray:lyr.dashArray,fillColor:lyr.color,fillOpacity:.15};
+    },
+    onEachFeature:function(feat,layer){
+      var nm=feat.properties.name;
+      if(nm) layer.bindTooltip(nm,{direction:'top'});
+    }
+  }).addTo(map);
+});
+
+// Точки объёмов — поверх KML
 var allBounds=[];
 PTS.forEach(function(p){
   allBounds.push([p.lat,p.lng]);
@@ -369,25 +399,6 @@ PTS.forEach(function(p){
     .bindPopup(pop)
     .bindTooltip('#'+p.i+' '+p.n,{direction:'top',offset:[0,-9]})
     .addTo(map);
-});
-
-// KML слои
-KML.forEach(function(lyr){
-  L.geoJSON({type:'FeatureCollection',features:lyr.features},{
-    pointToLayer:function(feat,ll){
-      if(feat.properties._svgHtml){
-        return L.marker(ll,{icon:L.divIcon({className:'',html:feat.properties._svgHtml,iconSize:[28,28],iconAnchor:[14,14],popupAnchor:[0,-14]})});
-      }
-      return L.circleMarker(ll,{radius:7,fillColor:lyr.color,color:'#fff',weight:2,fillOpacity:.85});
-    },
-    style:function(){
-      return {color:lyr.color,weight:2,dashArray:lyr.dashArray,fillColor:lyr.color,fillOpacity:.15};
-    },
-    onEachFeature:function(feat,layer){
-      var nm=feat.properties.name;
-      if(nm) layer.bindTooltip(nm,{direction:'top'});
-    }
-  }).addTo(map);
 });
 
 if(allBounds.length===1){map.setView(allBounds[0],16);}
