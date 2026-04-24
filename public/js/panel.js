@@ -138,8 +138,12 @@ var VOL_SEM_TYPES={
 
 function _volParseSem(notes){
   if(!notes)return{type:'',data:{},cleanNotes:''};
-  var m=notes.match(/^__SEM__:(\{.*?\})\n?([\s\S]*)$/);
-  if(m){try{return Object.assign({},JSON.parse(m[1]),{cleanNotes:m[2].trim()});}catch(e){}}
+  if(notes.indexOf('__SEM__:')!==0)return{type:'',data:{},cleanNotes:notes};
+  var rest=notes.slice(8);
+  var nl=rest.indexOf('\n');
+  var jsonStr=nl>=0?rest.slice(0,nl):rest;
+  var cleanNotes=nl>=0?rest.slice(nl+1).trim():'';
+  try{var p=JSON.parse(jsonStr);return{type:p.type||'',data:p.data||{},cleanNotes:cleanNotes};}catch(e){}
   return{type:'',data:{},cleanNotes:notes};
 }
 function _volBuildSem(type,data,cleanNotes){

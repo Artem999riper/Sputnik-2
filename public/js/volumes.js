@@ -287,10 +287,16 @@ async function exportExcel(siteId){
   const sh=(data,name)=>XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(data),name);
 
   // Семантика хранится в notes как __SEM__:{"type":"...","data":{...}}\nтекст
+  // Regex \{.*?\} не работает для вложенных объектов (захватывает только до первой '}').
+  // Правильный способ: взять строку между '__SEM__:' и первым '\n', распарсить как JSON.
   const parseSem=notes=>{
     if(!notes)return{type:'',data:{},cleanNotes:''};
-    const m=notes.match(/^__SEM__:(\{.*?\})\n?([\s\S]*)$/);
-    if(m){try{return Object.assign({},JSON.parse(m[1]),{cleanNotes:m[2].trim()});}catch(e){}}
+    if(!notes.startsWith('__SEM__:'))return{type:'',data:{},cleanNotes:notes};
+    const rest=notes.slice(8); // длина '__SEM__:' = 8
+    const nl=rest.indexOf('\n');
+    const jsonStr=nl>=0?rest.slice(0,nl):rest;
+    const cleanNotes=nl>=0?rest.slice(nl+1).trim():'';
+    try{const p=JSON.parse(jsonStr);return{type:p.type||'',data:p.data||{},cleanNotes};}catch(e){}
     return{type:'',data:{},cleanNotes:notes};
   };
   const SEM_LABEL={borehole:'Скважина',pit:'Шурф',ggs:'Пункт ГГС',ogs:'Пункт ОГС',
