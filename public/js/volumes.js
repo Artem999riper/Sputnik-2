@@ -285,22 +285,99 @@ async function exportExcel(siteId){
   const s=await fetch(`${API}/sites/${siteId}`).then(r=>r.json());
   const wb=XLSX.utils.book_new();
   const sh=(data,name)=>XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(data),name);
+
+  // Семантика хранится в notes как __SEM__:{"type":"...","data":{...}}\nтекст
+  const parseSem=notes=>{
+    if(!notes)return{type:'',data:{},cleanNotes:''};
+    const m=notes.match(/^__SEM__:(\{.*?\})\n?([\s\S]*)$/);
+    if(m){try{return Object.assign({},JSON.parse(m[1]),{cleanNotes:m[2].trim()});}catch(e){}}
+    return{type:'',data:{},cleanNotes:notes};
+  };
+  const SEM_LABEL={borehole:'Скважина',pit:'Шурф',ggs:'Пункт ГГС',ogs:'Пункт ОГС',
+    repere:'Репер',benchmark:'Марка',steel_angle:'Металлический уголок',other:'Другое'};
+
+  // Карты ID→имя для работников и техники
+  const wMap={},mMap={};
+  (s.bases||[]).forEach(b=>{
+    (b.workers||[]).forEach(w=>{wMap[w.id]=w.name;});
+    (b.machinery||[]).forEach(m=>{mMap[m.id]=m.name;});
+  });
+
+  // ── Обзор ──────────────────────────────────────────────────
   sh([['ПурГеоКом — Объект'],[''],['Объект',s.name],['Заказчик',s.client||''],['Договор №',s.contract_number||''],
     ['Адрес',s.address||''],['Начало',fmt(s.start_date)],['Срок',fmt(s.end_date)],['Статус',SSL[s.status]||s.status],
-    ['Готовность',s.completion_percent+'%'],['Баз',(s.bases||[]).length],['Персонал',(s.bases||[]).reduce((a,b)=>a+(b.workers||[]).length,0)],
+    ['Готовность',s.completion_percent+'%'],['Баз',(s.bases||[]).length],
+    ['Персонал',(s.bases||[]).reduce((a,b)=>a+(b.workers||[]).length,0)],
     ['Техника',(s.bases||[]).reduce((a,b)=>a+(b.machinery||[]).length,0)],['Примечания',s.notes||'']],'Обзор');
+
+  // ── Базы ───────────────────────────────────────────────────
   sh([['База','Широта','Долгота','Персонал','Техника','Материалов','Описание'],
     ...(s.bases||[]).map(b=>[b.name,b.lat,b.lng,(b.workers||[]).length,(b.machinery||[]).length,(b.materials||[]).length,b.description||''])],'Базы');
+
+  // ── Персонал ───────────────────────────────────────────────
   sh([['ФИО','Должность','Телефон','База','Машина'],
     ...(s.bases||[]).flatMap(b=>(b.workers||[]).map(w=>{const m=(b.machinery||[]).find(x=>x.id===w.machine_id);return[w.name,w.role||'',w.phone||'',b.name,m?m.name:'']}))],'Персонал');
+
+  // ── Техника ────────────────────────────────────────────────
   sh([['Название','Тип','Госномер','Статус','База','Широта','Долгота'],
     ...(s.bases||[]).flatMap(b=>(b.machinery||[]).map(m=>[m.name,m.type||'',m.plate_number||'',SL[m.status]||m.status,b.name,m.lat||'',m.lng||'']))],'Техника');
+
+  // ── Материалы ──────────────────────────────────────────────
   sh([['Материал','Кол-во','Ед.','Мин. запас','База'],
     ...(s.bases||[]).flatMap(b=>(b.materials||[]).map(m=>[m.name,m.amount,m.unit,m.min_amount,b.name]))],'Материалы');
+
+  // ── Прогресс ───────────────────────────────────────────────
   sh([['Вид работ','Выполнено','Всего','Ед.','%','Примечания'],
     ...(s.progress||[]).map(p=>[p.work_type,p.completed,p.total,p.unit,p.total>0?Math.round(p.completed/p.total*100)+'%':'—',p.notes||''])],'Прогресс');
-  sh([['Вид работ','Категория','Количество','Ед.','Геометрия','Примечания'],
-    ...(s.volumes||[]).map(v=>[v.name,v.category==='geology'?'Геология':'Геодезия',v.amount,v.unit,v.geojson?'Есть':'—',v.notes||''])],'Объёмы');
+
+  // ── Объёмы (расширено: плановые даты, тип семантики, чистые примечания) ──
+  sh([['Вид работ','Категория','Кол-во план.','Ед.','Нач. план','Оконч. план','Тип семантики','Геометрия','Примечания'],
+    ...(s.volumes||[]).map(v=>{
+      const sem=parseSem(v.notes);
+      return[v.name,v.category==='geology'?'Геология':'Геодезия',
+        v.amount,v.unit,fmt(v.plan_start),fmt(v.plan_end),
+        SEM_LABEL[sem.type]||'',v.geojson?'Есть':'—',sem.cleanNotes];
+    })],'Объёмы');
+
+  // ── Семантика объёмов (только точки с заполненным типом) ──
+  const semRows=[['Объём','Категория','Тип','Глубина (м)','Диаметр (мм)','УГВ (м)','Дата','Исполнитель','Описание / Примечание']];
+  (s.volumes||[]).forEach(v=>{
+    const sem=parseSem(v.notes);
+    if(!sem.type)return;
+    const d=sem.data||{};
+    semRows.push([v.name,v.category==='geology'?'Геология':'Геодезия',
+      SEM_LABEL[sem.type]||sem.type,
+      d.depth||'',d.diam||'',d.ugv||'',
+      d.date||'',d.exec||'',
+      d.desc||d.note||sem.cleanNotes]);
+  });
+  if(semRows.length>1)sh(semRows,'Семантика объёмов');
+
+  // ── Выполнение объёмов (vol_progress, только факт) ────────
+  const volMap={};
+  (s.volumes||[]).forEach(v=>{volMap[v.id]=v;});
+  // Итог по каждому объёму для расчёта %
+  const volDone={};
+  (s.vol_progress||[]).forEach(p=>{
+    if(p.row_type&&p.row_type!=='fact')return;
+    volDone[p.volume_id]=(volDone[p.volume_id]||0)+(p.completed||0);
+  });
+  const vpRows=[['Объём','Категория','Ед.','Дата','Выполнено за запись','Итого выполнено','% от плана','Работники','Техника','№ акта','Примечание']];
+  (s.vol_progress||[]).forEach(p=>{
+    if(p.row_type&&p.row_type!=='fact')return;
+    const vol=volMap[p.volume_id];
+    if(!vol)return;
+    const total=volDone[p.volume_id]||0;
+    const pct=vol.amount>0?Math.round(total/vol.amount*100)+'%':'—';
+    const workers=(p.worker_ids||'').split(',').filter(Boolean).map(id=>wMap[id]||id).join(', ');
+    const mac=p.machine_id?(mMap[p.machine_id]||p.machine_id):'';
+    vpRows.push([vol.name,vol.category==='geology'?'Геология':'Геодезия',
+      vol.unit,fmt(p.work_date),p.completed,total,pct,
+      workers,mac,p.act_number||'',p.notes||'']);
+  });
+  if(vpRows.length>1)sh(vpRows,'Выполнение объёмов');
+
+  // ── Камеральные ────────────────────────────────────────────
   const kr=[['Специалист','Роль','Ревизия','% готовности','Папка отчёта','Откр.замечаний','Закр.замечаний']];
   (s.kameral||[]).forEach(k=>{
     kr.push([k.specialist_name||'',k.specialist_role||'',k.revision||'Р0',k.completion_percent+'%',k.report_link||'',
@@ -308,10 +385,13 @@ async function exportExcel(siteId){
     (k.remarks||[]).forEach(r=>kr.push(['','','','','  → '+r.text,'',r.link||'']));
   });
   sh(kr,'Камеральные');
+
+  // ── Схема района ───────────────────────────────────────────
   const mr=[['СХЕМА РАЙОНА РАБОТ'],[''],['Тип','Название','Широта','Долгота','Статус','База']];
   (s.bases||[]).forEach(b=>mr.push(['🏕 База',b.name,b.lat,b.lng,b.description||'','—']));
   (s.bases||[]).forEach(b=>(b.machinery||[]).filter(m=>m.lat&&m.lng).forEach(m=>mr.push([`🚛 ${m.type||'Техника'}`,m.name,m.lat,m.lng,SL[m.status]||m.status,b.name])));
   sh(mr,'Схема района');
+
   const fname=`${s.name.replace(/[\/\\:*?"<>|]/g,'_')}_${new Date().toLocaleDateString('ru').replace(/\./g,'-')}.xlsx`;
   XLSX.writeFile(wb,fname);toast(`Сохранён: ${fname}`,'ok');
 }
