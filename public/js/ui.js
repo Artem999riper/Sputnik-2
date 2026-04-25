@@ -48,38 +48,78 @@ function toast(msg,type){
   c.appendChild(el);setTimeout(()=>el.remove(),3200);
 }
 
-// Удаление через API с автоматической поддержкой "Отменить", если сервер вернул trashId
+// Удаление через API с поддержкой "Отменить" (stateless — данные хранятся на клиенте)
 async function apiDelUndo(url,msg,refresh){
   let r; try{r=await fetch(`${API}${url}`,{method:'DELETE'}).then(r=>r.json());}catch(e){r={error:'Ошибка сети'};}
   if(r&&r.error){toast('Ошибка: '+r.error,'err');return false;}
   if(refresh){try{await refresh();}catch(e){}}
-  if(r&&r.trashId)toastUndo(msg||'Удалено',r.trashId,refresh);
+  if(r&&r._restore) showUndoBar(msg||'Удалено', r._restore, refresh);
   else toast(msg||'Удалено','ok');
   return true;
 }
 
-// Тост с кнопкой "Отменить" — для destructive действий с серверной корзиной (TTL 60 с)
-function toastUndo(msg,trashId,onUndone){
-  if(!trashId){toast(msg,'ok');return;}
-  const c=document.getElementById('toasts');
-  const el=document.createElement('div');el.className='toast ok';
-  el.style.display='flex';el.style.alignItems='center';el.style.gap='12px';
-  const span=document.createElement('span');span.textContent=msg;
+// Заметная панель "Отменить" внизу экрана — исчезает через 10 секунд
+let _undoBarTimer=null, _undoBarEl=null;
+function showUndoBar(msg, restoreData, onUndone){
+  // Убрать предыдущую если была
+  if(_undoBarEl){clearTimeout(_undoBarTimer);_undoBarEl.remove();_undoBarEl=null;}
+  if(!restoreData){toast(msg,'ok');return;}
+
+  const bar=document.createElement('div');
+  bar.id='undo-bar';
+  bar.style.cssText=[
+    'position:fixed','bottom:24px','left:50%','transform:translateX(-50%)',
+    'background:#1e293b','color:#fff','border-radius:10px',
+    'box-shadow:0 4px 20px rgba(0,0,0,.45)','display:flex','align-items:center',
+    'gap:14px','padding:12px 18px','z-index:9999','font-size:13px','font-weight:500',
+    'min-width:280px','max-width:90vw','animation:undoSlideIn .25s ease'
+  ].join(';');
+
+  const txt=document.createElement('span');txt.textContent=msg;txt.style.flex='1';
+
+  // Progress bar показывает оставшееся время (10 с)
+  const prog=document.createElement('div');
+  prog.style.cssText='position:absolute;bottom:0;left:0;height:3px;background:#3b82f6;border-radius:0 0 10px 10px;width:100%;transition:width 10s linear';
+
   const btn=document.createElement('button');
   btn.textContent='↩ Отменить';
-  btn.style.cssText='background:rgba(255,255,255,.25);border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit';
+  btn.style.cssText=[
+    'background:#3b82f6','border:none','color:#fff','border-radius:6px',
+    'padding:6px 14px','font-size:13px','font-weight:700','cursor:pointer',
+    'font-family:inherit','white-space:nowrap','flex-shrink:0'
+  ].join(';');
+
+  const close=document.createElement('button');
+  close.textContent='✕';
+  close.style.cssText='background:none;border:none;color:#94a3b8;font-size:14px;cursor:pointer;padding:0 2px;line-height:1';
+
   btn.onclick=async function(){
     btn.disabled=true;btn.textContent='…';
+    clearTimeout(_undoBarTimer);
     try{
-      const r=await fetch(`${API}/restore/${encodeURIComponent(trashId)}`,{method:'POST'}).then(r=>r.json());
-      if(r&&r.ok){toast('Восстановлено','ok');try{onUndone&&onUndone();}catch(e){}}
-      else toast('Не удалось отменить: '+(r&&r.error||'истёк срок'),'err');
+      const r=await fetch(`${API}/restore`,{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(restoreData)
+      }).then(r=>r.json());
+      if(r&&r.ok){toast('Восстановлено ✓','ok');try{onUndone&&onUndone();}catch(e){}}
+      else toast('Не удалось отменить: '+(r&&r.error||'ошибка'),'err');
     }catch(e){toast('Ошибка отмены','err');}
-    el.remove();
+    bar.remove();_undoBarEl=null;
   };
-  el.appendChild(span);el.appendChild(btn);
-  c.appendChild(el);setTimeout(()=>el.remove(),8000);
+  close.onclick=function(){clearTimeout(_undoBarTimer);bar.remove();_undoBarEl=null;};
+
+  bar.appendChild(txt);bar.appendChild(btn);bar.appendChild(close);bar.appendChild(prog);
+  document.body.appendChild(bar);
+  _undoBarEl=bar;
+
+  // Start shrinking progress bar
+  requestAnimationFrame(()=>{ prog.style.width='0%'; });
+
+  _undoBarTimer=setTimeout(()=>{bar.remove();_undoBarEl=null;},10000);
 }
+
+// Устаревшая обёртка (оставлена для обратной совместимости с вызовами toastUndo в коде)
+function toastUndo(msg,trashId,onUndone){toast(msg,'ok');}
 
 // ═══════════════════════════════════════════════════════════
 // 🔔 СИСТЕМА УВЕДОМЛЕНИЙ

@@ -32,9 +32,9 @@ module.exports = (app, getDb, L) => {
   }));
 
   app.delete('/api/pgk/workers/:id', wrap((req, res) => {
-    const trashId = trashAndDelete(db(), 'pgk_workers', req.params.id);
-    if (!trashId) return res.status(404).json({ error: 'Not found' });
-    res.json({ success: true, trashId });
+    const _restore = trashAndDelete(db(), 'pgk_workers', req.params.id);
+    if (!_restore) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true, _restore });
   }));
 
   app.put('/api/pgk/workers/:id/status', wrap((req, res) => {
@@ -114,9 +114,9 @@ module.exports = (app, getDb, L) => {
   }));
 
   app.delete('/api/pgk/machinery/:id', wrap((req, res) => {
-    const trashId = trashAndDelete(db(), 'pgk_machinery', req.params.id);
-    if (!trashId) return res.status(404).json({ error: 'Not found' });
-    res.json({ success: true, trashId });
+    const _restore = trashAndDelete(db(), 'pgk_machinery', req.params.id);
+    if (!_restore) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true, _restore });
   }));
 
   app.get('/api/pgk/machinery/:id/vol_progress', wrap((req, res) => {
@@ -176,8 +176,8 @@ module.exports = (app, getDb, L) => {
   }));
 
   app.delete('/api/pgk/equipment/:id', wrap((req, res) => {
-    const trashId = trashAndDelete(db(), 'pgk_equipment', req.params.id);
-    if (!trashId) return res.status(404).json({ error: 'Not found' });
-    res.json({ success: true, trashId });
+    const _restore = trashAndDelete(db(), 'pgk_equipment', req.params.id);
+    if (!_restore) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true, _restore });
   }));
 };

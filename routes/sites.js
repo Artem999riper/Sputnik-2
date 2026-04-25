@@ -75,7 +75,7 @@ module.exports = (app, getDb, L) => {
     all(d, 'SELECT id FROM kameral_reports WHERE site_id=?', [req.params.id])
       .forEach(r => run(d, 'DELETE FROM kameral_remarks WHERE report_id=?', [r.id]));
     run(d, 'DELETE FROM activity_log WHERE site_id=?', [req.params.id]);
-    const trashId = trashAndDelete(d, 'sites', req.params.id, {
+    const _restore = trashAndDelete(d, 'sites', req.params.id, {
       children: [
         { table: 'site_bases',      fkColumn: 'site_id' },
         { table: 'progress_items',  fkColumn: 'site_id' },
@@ -85,8 +85,8 @@ module.exports = (app, getDb, L) => {
         { table: 'vol_progress',    fkColumn: 'site_id' },
       ],
     });
-    if (!trashId) return res.status(404).json({ error: 'Not found' });
-    res.json({ success: true, trashId });
+    if (!_restore) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true, _restore });
   }));
 
   app.put('/api/sites/:id/bases', wrap((req, res) => {
@@ -123,11 +123,11 @@ module.exports = (app, getDb, L) => {
   }));
 
   app.delete('/api/volumes/:id', wrap((req, res) => {
-    const trashId = trashAndDelete(db(), 'volumes', req.params.id, {
+    const _restore = trashAndDelete(db(), 'volumes', req.params.id, {
       children: [{ table: 'vol_progress', fkColumn: 'volume_id' }],
     });
-    if (!trashId) return res.status(404).json({ error: 'Not found' });
-    res.json({ success: true, trashId });
+    if (!_restore) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true, _restore });
   }));
 
   // ── VOL_PROGRESS ───────────────────────────────────────────
@@ -162,9 +162,9 @@ module.exports = (app, getDb, L) => {
   }));
 
   app.delete('/api/vol_progress/:id', wrap((req, res) => {
-    const trashId = trashAndDelete(db(), 'vol_progress', req.params.id);
-    if (!trashId) return res.status(404).json({ error: 'Not found' });
-    res.json({ success: true, trashId });
+    const _restore = trashAndDelete(db(), 'vol_progress', req.params.id);
+    if (!_restore) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true, _restore });
   }));
 
   // ── PROGRESS ITEMS ─────────────────────────────────────────
@@ -189,9 +189,9 @@ module.exports = (app, getDb, L) => {
   }));
 
   app.delete('/api/progress/:id', wrap((req, res) => {
-    const trashId = trashAndDelete(db(), 'progress_items', req.params.id);
-    if (!trashId) return res.status(404).json({ error: 'Not found' });
-    res.json({ success: true, trashId });
+    const _restore = trashAndDelete(db(), 'progress_items', req.params.id);
+    if (!_restore) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true, _restore });
   }));
 
   // ── КАМЕРАЛЬНЫЕ РАБОТЫ ─────────────────────────────────────
@@ -213,11 +213,11 @@ module.exports = (app, getDb, L) => {
   }));
 
   app.delete('/api/kameral/:id', wrap((req, res) => {
-    const trashId = trashAndDelete(db(), 'kameral_reports', req.params.id, {
+    const _restore = trashAndDelete(db(), 'kameral_reports', req.params.id, {
       children: [{ table: 'kameral_remarks', fkColumn: 'report_id' }],
     });
-    if (!trashId) return res.status(404).json({ error: 'Not found' });
-    res.json({ success: true, trashId });
+    if (!_restore) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true, _restore });
   }));
 
   app.post('/api/kameral/:id/remarks', wrap((req, res) => {
@@ -238,9 +238,9 @@ module.exports = (app, getDb, L) => {
   }));
 
   app.delete('/api/remarks/:id', wrap((req, res) => {
-    const trashId = trashAndDelete(db(), 'kameral_remarks', req.params.id);
-    if (!trashId) return res.status(404).json({ error: 'Not found' });
-    res.json({ success: true, trashId });
+    const _restore = trashAndDelete(db(), 'kameral_remarks', req.params.id);
+    if (!_restore) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true, _restore });
   }));
 
   // ── SITE TASKS ─────────────────────────────────────────────
@@ -265,9 +265,9 @@ module.exports = (app, getDb, L) => {
   }));
 
   app.delete('/api/tasks/:id', wrap((req, res) => {
-    const trashId = trashAndDelete(db(), 'site_tasks', req.params.id);
-    if (!trashId) return res.status(404).json({ error: 'Not found' });
-    res.json({ success: true, trashId });
+    const _restore = trashAndDelete(db(), 'site_tasks', req.params.id);
+    if (!_restore) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true, _restore });
   }));
 
   // ── KML LAYERS PER SITE ────────────────────────────────────

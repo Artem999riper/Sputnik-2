@@ -533,6 +533,8 @@ body.panel-open #gruz-page{right:var(--pw)}
 .toast{background:var(--s);border:1.5px solid var(--bd);border-left:3px solid var(--acc);border-radius:var(--r);padding:8px 12px;font-size:11px;font-weight:500;max-width:300px;box-shadow:var(--shm);animation:tin .2s ease}
 .toast.ok{border-left-color:var(--grn)}.toast.err{border-left-color:var(--red)}
 @keyframes tin{from{transform:translateX(8px);opacity:0}to{transform:translateX(0);opacity:1}}
+@keyframes undoSlideIn{from{transform:translateX(-50%) translateY(20px);opacity:0}to{transform:translateX(-50%) translateY(0);opacity:1}}
+#undo-bar{position:relative;overflow:hidden}
 .empty{text-align:center;padding:20px 10px;color:var(--tx3);font-size:11px}.empty-i{font-size:24px;margin-bottom:4px}
 ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:3px}
 a{color:var(--acc);text-decoration:none;word-break:break-all}a:hover{text-decoration:underline}

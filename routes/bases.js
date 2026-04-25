@@ -56,11 +56,11 @@ module.exports = (app, getDb, L) => {
     ['pgk_workers', 'pgk_machinery', 'pgk_equipment', 'materials'].forEach(t =>
       run(d, `UPDATE ${t} SET base_id=NULL WHERE base_id=?`, [req.params.id])
     );
-    const trashId = trashAndDelete(d, 'bases', req.params.id, {
+    const _restore = trashAndDelete(d, 'bases', req.params.id, {
       children: [{ table: 'site_bases', fkColumn: 'base_id' }],
     });
-    if (!trashId) return res.status(404).json({ error: 'Not found' });
-    res.json({ success: true, trashId });
+    if (!_restore) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true, _restore });
   }));
 
   // ── MATERIALS ──────────────────────────────────────────────
@@ -84,9 +84,9 @@ module.exports = (app, getDb, L) => {
   }));
 
   app.delete('/api/materials/:id', wrap((req, res) => {
-    const trashId = trashAndDelete(db(), 'materials', req.params.id);
-    if (!trashId) return res.status(404).json({ error: 'Not found' });
-    res.json({ success: true, trashId });
+    const _restore = trashAndDelete(db(), 'materials', req.params.id);
+    if (!_restore) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true, _restore });
   }));
 
   app.get('/api/materials/summary', wrap((req, res) => {

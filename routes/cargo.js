@@ -140,8 +140,8 @@ module.exports = (app, getDb, L) => {
   }));
 
   app.delete('/api/cargo/:id', wrap((req, res) => {
-    const trashId = trashAndDelete(db(), 'cargo_orders', req.params.id);
-    if (!trashId) return res.status(404).json({ error: 'Not found' });
-    res.json({ success: true, trashId });
+    const _restore = trashAndDelete(db(), 'cargo_orders', req.params.id);
+    if (!_restore) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true, _restore });
   }));
 };

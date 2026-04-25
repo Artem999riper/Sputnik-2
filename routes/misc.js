@@ -48,9 +48,9 @@ module.exports = (app, getDb, L, { upload, demProcessor, BACKUP_DIR, doBackup, g
   }));
 
   app.delete('/api/layers/:id', wrap((req, res) => {
-    const trashId = trashAndDelete(db(), 'kml_layers', req.params.id);
-    if (!trashId) return res.status(404).json({ error: 'Not found' });
-    res.json({ success: true, trashId });
+    const _restore = trashAndDelete(db(), 'kml_layers', req.params.id);
+    if (!_restore) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true, _restore });
   }));
 
   // ── ACTIVITY LOG ───────────────────────────────────────────

@@ -91,10 +91,10 @@ module.exports = (app, getDb, L) => {
   app.delete('/api/gtasks/:id', wrap((req, res) => {
     const d = db();
     const t = get(d, 'SELECT * FROM global_tasks WHERE id=?', [req.params.id]);
-    const trashId = trashAndDelete(d, 'global_tasks', req.params.id);
-    if (!trashId) return res.status(404).json({ error: 'Not found' });
+    const _restore = trashAndDelete(d, 'global_tasks', req.params.id);
+    if (!_restore) return res.status(404).json({ error: 'Not found' });
     if (t) L(t.site_id, t.base_id, 'Задача удалена', t.title, '');
-    res.json({ success: true, trashId });
+    res.json({ success: true, _restore });
   }));
 
   // ── NOTIFICATIONS ──────────────────────────────────────────
