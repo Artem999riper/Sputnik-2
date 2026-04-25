@@ -1,5 +1,5 @@
 function initMap(){
-  map=L.map('map',{center:[62,55],zoom:5,zoomControl:false});
+  map=L.map('map',{center:[62,55],zoom:5,zoomControl:false,attributionControl:false});
   const osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OSM',maxZoom:19});
   const sat=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{attribution:'© Esri',maxZoom:19});
   osm.addTo(map);

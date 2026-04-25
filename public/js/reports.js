@@ -84,38 +84,65 @@ async function openPersonnelReport(){
 
 function exportPersonnelExcel(workers){
   const wb=XLSX.utils.book_new();
-  const today=new Date().toLocaleDateString('ru');
-  const aoa=[
-    ['Отчёт по персоналу ПурГеоКом — '+today],
-    [],
-    ['Сотрудник','Должность','Телефон','База','Техника','Дата заезда','Дней в поле','Примечания'],
-    ...workers.map(w=>[
-      w.name||'',w.role||'',w.phone||'',w.base_name||'',
-      w.machine_name||'',w.start_date||'',
-      w.field_days!==null?w.field_days:'',w.notes||''
-    ])
-  ];
-  const ws=XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols']=[{wch:25},{wch:20},{wch:15},{wch:20},{wch:18},{wch:12},{wch:12},{wch:25}];
-  // Summary sheet
-  const baseGroups={};
+  const today=new Date();
+  const todayStr=today.toLocaleDateString('ru');
+
+  // Group by equipment (machine), matching "Список людей.xlsx" structure
+  const byMachine={};
   workers.forEach(w=>{
-    if(!baseGroups[w.base_name])baseGroups[w.base_name]=[];
-    baseGroups[w.base_name].push(w);
+    const key=w.machine_name||'— Техника не указана';
+    if(!byMachine[key])byMachine[key]={location:w.base_name||'',workers:[]};
+    byMachine[key].workers.push(w);
+  });
+
+  const aoa=[
+    ['Список специалистов ПурГеоКом'],
+    ['на дату:',todayStr],
+    [],
+    ['Привязка специалистов к технике ПГК'],
+    ['№№','Наименование техники','Местоположение','Комплектность бригады, ФИО','Должность','Дата заезда','Дней в поле','Телефон'],
+  ];
+
+  let rowNum=1;
+  Object.entries(byMachine).forEach(([machineName,group])=>{
+    group.workers.forEach((w,i)=>{
+      aoa.push([
+        i===0?rowNum++:'',
+        i===0?machineName:'',
+        i===0?(group.location||''):'',
+        w.name||'',
+        w.role||'',
+        w.start_date||'',
+        w.field_days!==null?w.field_days:'',
+        w.phone||''
+      ]);
+    });
+    aoa.push([]);
+  });
+
+  const ws1=XLSX.utils.aoa_to_sheet(aoa);
+  ws1['!cols']=[{wch:5},{wch:20},{wch:22},{wch:28},{wch:22},{wch:14},{wch:12},{wch:16}];
+  XLSX.utils.book_append_sheet(wb,ws1,'Для ПГК');
+
+  // Summary by base
+  const byBase={};
+  workers.forEach(w=>{
+    const bn=w.base_name||'— Без базы';
+    if(!byBase[bn])byBase[bn]=[];
+    byBase[bn].push(w);
   });
   const sumAoa=[
-    ['Сводка по базам'],
+    ['Сводка по базам — '+todayStr],
     ['База','Кол-во','Ср. дней в поле','30+ дней'],
-    ...Object.entries(baseGroups).map(([bn,ww])=>[
+    ...Object.entries(byBase).map(([bn,ww])=>[
       bn,ww.length,
       ww.filter(w=>w.field_days!==null).length?
         Math.round(ww.filter(w=>w.field_days!==null).reduce((a,w)=>a+w.field_days,0)/ww.filter(w=>w.field_days!==null).length):0,
       ww.filter(w=>(w.field_days||0)>=30).length
     ])
   ];
-  XLSX.utils.book_append_sheet(wb,ws,'Персонал');
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(sumAoa),'По базам');
-  XLSX.writeFile(wb,'Персонал_'+today.replace(/\./g,'_')+'.xlsx');
+  XLSX.writeFile(wb,'Персонал_'+todayStr.replace(/\./g,'_')+'.xlsx');
   toast('Excel сохранён','ok');
 }
 
