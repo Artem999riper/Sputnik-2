@@ -270,8 +270,11 @@ async function kmlMoveToGroup(lid, gid) {
 async function kmlDeleteLayer(id) {
   if(!confirm('Удалить слой?'))return;
   if(lGroups[id])map.removeLayer(lGroups[id]);
-  await fetch(`${API}/layers/${id}`,{method:'DELETE'});
-  layers=layers.filter(l=>l.id!==id);renderKmlPanel();toast('Слой удалён','ok');
+  layers=layers.filter(l=>l.id!==id);renderKmlPanel();
+  await apiDelUndo(`/layers/${id}`,'Слой удалён',async()=>{
+    const fresh=await fetch(`${API}/layers`).then(r=>r.json()).catch(()=>[]);
+    layers=fresh;renderKmlPanel();try{reloadKmlLayers();}catch(e){}
+  });
 }
 
 // ── Контекстное меню слоя ───────────────────────────────────

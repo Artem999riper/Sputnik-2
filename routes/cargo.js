@@ -1,6 +1,7 @@
 const { v4: uuid } = require('uuid');
 const { all, get, run } = require('../database');
 const { wrap } = require('./validate');
+const { trashAndDelete } = require('./realtime');
 
 function tryJSON(str, fallback) {
   try { return JSON.parse(str); } catch(e) { return fallback; } }
@@ -139,7 +140,8 @@ module.exports = (app, getDb, L) => {
   }));
 
   app.delete('/api/cargo/:id', wrap((req, res) => {
-    run(db(), 'DELETE FROM cargo_orders WHERE id=?', [req.params.id]);
-    res.json({ success: true });
+    const trashId = trashAndDelete(db(), 'cargo_orders', req.params.id);
+    if (!trashId) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true, trashId });
   }));
 };

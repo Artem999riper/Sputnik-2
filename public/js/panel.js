@@ -24,6 +24,7 @@ async function selectBase(id){
 function openPanel(isBase){
   const wasOpen=document.getElementById('panel').classList.contains('open');
   document.getElementById('panel').classList.add('open');
+  document.body.classList.add('panel-open');
   if(!wasOpen) setTimeout(()=>map.invalidateSize({animate:false,pan:false}),260);
   document.getElementById('ph-title').textContent=currentObj.name;
   const ph=document.getElementById('phdr');
@@ -35,6 +36,7 @@ function openPanel(isBase){
 }
 function closePanel(){
   document.getElementById('panel').classList.remove('open');
+  document.body.classList.remove('panel-open');
   setTimeout(()=>map.invalidateSize({animate:false,pan:false}),260);
   currentObj=null;currentType=null;activeSiteId=null;
   renderSidebar();

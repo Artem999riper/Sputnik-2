@@ -1428,7 +1428,7 @@ async function savePGKWorker(id){
   else  await fetch(`${API}/pgk/workers`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
   closeModal();await loadPGK();await loadAll();toast(id?'Обновлено':'Добавлено','ok');
 }
-async function pgkDelWorker(id){if(!confirm('Удалить?'))return;await fetch(`${API}/pgk/workers/${id}`,{method:'DELETE'});await loadPGK();await loadAll();}
+async function pgkDelWorker(id){if(!confirm('Удалить?'))return;await apiDelUndo(`/pgk/workers/${id}`,'Сотрудник удалён',async()=>{await loadPGK();await loadAll();});}
 
 // ── PGK MACHINERY CRUD ─────────────────────────────────────
 function pgkAddMach(){
@@ -1542,7 +1542,7 @@ async function openDrillStats(machId){
 }
 async function savePGKMach(id){} // legacy stub
 
-async function pgkDelMach(id){if(!confirm('Удалить?'))return;await fetch(`${API}/pgk/machinery/${id}`,{method:'DELETE'});await loadPGK();await loadAll();}
+async function pgkDelMach(id){if(!confirm('Удалить?'))return;await apiDelUndo(`/pgk/machinery/${id}`,'Техника удалена',async()=>{await loadPGK();await loadAll();});}
 
 // ── PGK EQUIPMENT CRUD ─────────────────────────────────────
 function pgkAddEquip(){
@@ -1575,7 +1575,7 @@ async function savePGKEquip(id){
   else  await fetch(`${API}/pgk/equipment`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
   closeModal();await loadPGK();toast(id?'Обновлено':'Добавлено','ok');
 }
-async function pgkDelEquip(id){if(!confirm('Удалить?'))return;await fetch(`${API}/pgk/equipment/${id}`,{method:'DELETE'});await loadPGK();}
+async function pgkDelEquip(id){if(!confirm('Удалить?'))return;await apiDelUndo(`/pgk/equipment/${id}`,'Оборудование удалено',loadPGK);}
 
 function pgkAssignEquipResponsible(eid){
   const e=pgkEquipment.find(x=>x.id===eid);if(!e)return;
@@ -1623,7 +1623,7 @@ async function saveWorker(id){
   else  await fetch(`${API}/pgk/workers`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
   closeModal();await refreshCurrent();toast(id?'Обновлено':'Добавлено','ok');
 }
-async function delWorker(id){if(!confirm('Удалить?'))return;await fetch(`${API}/pgk/workers/${id}`,{method:'DELETE'});await refreshCurrent();}
+async function delWorker(id){if(!confirm('Удалить?'))return;await apiDelUndo(`/pgk/workers/${id}`,'Сотрудник удалён',refreshCurrent);}
 
 function openAddMachModal(){
   showModal('Новая техника',`<div class="fgr">
@@ -1652,7 +1652,7 @@ async function saveMach(id){
   else  await fetch(`${API}/pgk/machinery`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
   closeModal();await refreshCurrent();toast(id?'Обновлено':'Добавлено','ok');
 }
-async function delMach(id){if(!confirm('Удалить?'))return;await fetch(`${API}/pgk/machinery/${id}`,{method:'DELETE'});await refreshCurrent();}
+async function delMach(id){if(!confirm('Удалить?'))return;await apiDelUndo(`/pgk/machinery/${id}`,'Техника удалена',refreshCurrent);}
 
 function enterPlaceMode(){
   // На странице ПГК currentObj может быть null — нужно выбрать базу
@@ -1725,7 +1725,7 @@ async function mergeMaterials(baseId){
     else toast('Дублей не найдено','ok');
   }catch(e){toast('Ошибка объединения','err');}
 }
-async function delMat(id){if(!confirm('Удалить?'))return;await fetch(`${API}/materials/${id}`,{method:'DELETE'});await refreshCurrent();}
+async function delMat(id){if(!confirm('Удалить?'))return;await apiDelUndo(`/materials/${id}`,'Материал удалён',refreshCurrent);}
 
 
 // ═══════════════════════════════════════════════════════════
@@ -1828,7 +1828,7 @@ async function saveSite(id){
   if(id)selectSite(id);
   toast(id?'Обновлено':'Объект создан — смотри список слева','ok');
 }
-async function deleteSite(id){if(!confirm('Удалить объект?'))return;await fetch(`${API}/sites/${id}`,{method:'DELETE'});closePanel();await loadAll();toast('Удалено','ok');}
+async function deleteSite(id){if(!confirm('Удалить объект?'))return;closePanel();await apiDelUndo(`/sites/${id}`,'Объект удалён',loadAll);}
 
 function openAddBaseModal(lat,lng){
   setTool('view');
@@ -1857,7 +1857,7 @@ async function saveBase(id){
   else  await fetch(`${API}/bases`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
   closeModal();await loadAll();if(id&&currentObj?.id===id)refreshCurrent();toast(id?'Обновлено':'База создана','ok');
 }
-async function deleteBase(id){if(!confirm('Удалить базу?'))return;await fetch(`${API}/bases/${id}`,{method:'DELETE'});closePanel();await loadAll();toast('Удалено','ok');}
+async function deleteBase(id){if(!confirm('Удалить базу?'))return;closePanel();await apiDelUndo(`/bases/${id}`,'База удалена',loadAll);}
 
 async function openAssignBasesModal(siteId){
   const s=await fetch(`${API}/sites/${siteId}`).then(r=>r.json());
@@ -1944,8 +1944,7 @@ async function deleteVol(id){
   });
   // Remove the volume's own layer
   if(volLayers[id]){try{map.removeLayer(volLayers[id]);}catch(e){}delete volLayers[id];}
-  await fetch(`${API}/volumes/${id}`,{method:'DELETE'});
-  await refreshCurrent();
+  await apiDelUndo(`/volumes/${id}`,'Объём удалён',refreshCurrent);
 }
 function zoomVol(id){
   const vol=(currentObj?.volumes||[]).find(x=>x.id===id);if(!vol?.geojson)return;
@@ -2112,7 +2111,7 @@ async function saveProg(id){
   else  await fetch(`${API}/sites/${currentObj.id}/progress`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
   closeModal();await refreshCurrent();toast(id?'Обновлено':'Добавлено','ok');
 }
-async function deleteProg(id){if(!confirm('Удалить?'))return;await fetch(`${API}/progress/${id}`,{method:'DELETE'});await refreshCurrent();}
+async function deleteProg(id){if(!confirm('Удалить?'))return;await apiDelUndo(`/progress/${id}`,'Прогресс удалён',refreshCurrent);}
 async function recalcPct(){
   const pp=currentObj?.progress||[];if(!pp.length){toast('Нет данных прогресса','err');return;}
   const pcts=pp.filter(p=>p.total>0).map(p=>(p.completed/p.total)*100);
@@ -2216,13 +2215,7 @@ async function saveTask(id){
 }
 async function deleteTask(id){
   if(!confirm('Удалить задачу?'))return;
-  const t=(currentObj?.tasks||[]).find(x=>x.id===id);
-  await fetch(`${API}/tasks/${id}`,{method:'DELETE'});
-  pushUndo('Удаление задачи',async()=>{
-    if(t)await fetch(`${API}/sites/${currentObj.id}/tasks`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...t,user_name:un()})});
-    await refreshCurrent();
-  });
-  await refreshCurrent();
+  await apiDelUndo(`/tasks/${id}`,'Задача удалена',refreshCurrent);
 }
 async function toggleTask(id){
   const t=(currentObj?.tasks||[]).find(x=>x.id===id);if(!t)return;

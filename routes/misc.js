@@ -3,8 +3,9 @@ const fs   = require('fs');
 const { v4: uuid } = require('uuid');
 const { all, get, run } = require('../database');
 const { required, wrap } = require('./validate');
+const { trashAndDelete } = require('./realtime');
 
-module.exports = (app, getDb, L, { upload, demProcessor, BACKUP_DIR, doBackup }) => {
+module.exports = (app, getDb, L, { upload, demProcessor, BACKUP_DIR, doBackup, getBackupSettings, setBackupSettings, performAutoBackup }) => {
   const db = () => getDb();
 
   // ── KML LAYERS (global) ────────────────────────────────────
@@ -47,8 +48,9 @@ module.exports = (app, getDb, L, { upload, demProcessor, BACKUP_DIR, doBackup })
   }));
 
   app.delete('/api/layers/:id', wrap((req, res) => {
-    run(db(), 'DELETE FROM kml_layers WHERE id=?', [req.params.id]);
-    res.json({ success: true });
+    const trashId = trashAndDelete(db(), 'kml_layers', req.params.id);
+    if (!trashId) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true, trashId });
   }));
 
   // ── ACTIVITY LOG ───────────────────────────────────────────
@@ -149,6 +151,30 @@ module.exports = (app, getDb, L, { upload, demProcessor, BACKUP_DIR, doBackup })
     const fname = `backup_${ts}.db`;
     const size = doBackup(path.join(BACKUP_DIR, fname));
     res.json({ ok: true, name: fname, size });
+  }));
+
+  // ── BACKUP SETTINGS ────────────────────────────────────────
+  app.get('/api/backups/settings', wrap((req, res) => {
+    res.json(getBackupSettings ? getBackupSettings() : { interval_hours: 2, max_count: 10 });
+  }));
+
+  app.put('/api/backups/settings', wrap((req, res) => {
+    if (!setBackupSettings) return res.status(501).json({ error: 'Не доступно' });
+    const { interval_hours, max_count } = req.body;
+    const ih = (interval_hours != null) ? parseFloat(interval_hours) : null;
+    const mc = (max_count != null) ? parseInt(max_count) : null;
+    if (ih != null && (isNaN(ih) || ih < 0 || ih > 168))
+      return res.status(400).json({ error: 'interval_hours: 0–168' });
+    if (mc != null && (isNaN(mc) || mc < 1 || mc > 200))
+      return res.status(400).json({ error: 'max_count: 1–200' });
+    setBackupSettings({ interval_hours: ih, max_count: mc });
+    res.json({ ok: true, ...getBackupSettings() });
+  }));
+
+  app.post('/api/backups/run-auto', wrap((req, res) => {
+    if (!performAutoBackup) return res.status(501).json({ error: 'Не доступно' });
+    performAutoBackup();
+    res.json({ ok: true });
   }));
 
   app.post('/api/backups/restore/:name', wrap((req, res) => {

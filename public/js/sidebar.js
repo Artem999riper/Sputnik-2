@@ -303,8 +303,11 @@ function editLayer(id){
 }
 async function deleteLayer(id){
   if(lGroups[id])map.removeLayer(lGroups[id]);
-  await fetch(`${API}/layers/${id}`,{method:'DELETE'});
-  layers=layers.filter(l=>l.id!==id);renderLP();toast('Удалено','ok');
+  layers=layers.filter(l=>l.id!==id);renderLP();
+  await apiDelUndo(`/layers/${id}`,'Слой удалён',async()=>{
+    const fresh=await fetch(`${API}/layers`).then(r=>r.json()).catch(()=>[]);
+    layers=fresh;renderLP();try{reloadKmlLayers();}catch(e){}
+  });
 }
 async function importLayer(evt){
   const file=evt.target.files[0];if(!file)return;

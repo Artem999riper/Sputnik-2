@@ -1,6 +1,7 @@
 const { v4: uuid } = require('uuid');
 const { all, get, run } = require('../database');
 const { required, wrap } = require('./validate');
+const { trashAndDelete } = require('./realtime');
 
 module.exports = (app, getDb, L) => {
   const db = () => getDb();
@@ -70,15 +71,22 @@ module.exports = (app, getDb, L) => {
 
   app.delete('/api/sites/:id', wrap((req, res) => {
     const d = db();
-    ['site_bases', 'progress_items', 'volumes', 'site_tasks'].forEach(t =>
-      run(d, `DELETE FROM ${t} WHERE site_id=?`, [req.params.id])
-    );
+    // remarks → удаляем без сохранения (зависят от уже удалённых reports)
     all(d, 'SELECT id FROM kameral_reports WHERE site_id=?', [req.params.id])
       .forEach(r => run(d, 'DELETE FROM kameral_remarks WHERE report_id=?', [r.id]));
-    run(d, 'DELETE FROM kameral_reports WHERE site_id=?', [req.params.id]);
     run(d, 'DELETE FROM activity_log WHERE site_id=?', [req.params.id]);
-    run(d, 'DELETE FROM sites WHERE id=?', [req.params.id]);
-    res.json({ success: true });
+    const trashId = trashAndDelete(d, 'sites', req.params.id, {
+      children: [
+        { table: 'site_bases',      fkColumn: 'site_id' },
+        { table: 'progress_items',  fkColumn: 'site_id' },
+        { table: 'volumes',         fkColumn: 'site_id' },
+        { table: 'site_tasks',      fkColumn: 'site_id' },
+        { table: 'kameral_reports', fkColumn: 'site_id' },
+        { table: 'vol_progress',    fkColumn: 'site_id' },
+      ],
+    });
+    if (!trashId) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true, trashId });
   }));
 
   app.put('/api/sites/:id/bases', wrap((req, res) => {
@@ -115,10 +123,11 @@ module.exports = (app, getDb, L) => {
   }));
 
   app.delete('/api/volumes/:id', wrap((req, res) => {
-    const d = db();
-    run(d, 'DELETE FROM vol_progress WHERE volume_id=?', [req.params.id]);
-    run(d, 'DELETE FROM volumes WHERE id=?', [req.params.id]);
-    res.json({ success: true });
+    const trashId = trashAndDelete(db(), 'volumes', req.params.id, {
+      children: [{ table: 'vol_progress', fkColumn: 'volume_id' }],
+    });
+    if (!trashId) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true, trashId });
   }));
 
   // ── VOL_PROGRESS ───────────────────────────────────────────
@@ -153,8 +162,9 @@ module.exports = (app, getDb, L) => {
   }));
 
   app.delete('/api/vol_progress/:id', wrap((req, res) => {
-    run(db(), 'DELETE FROM vol_progress WHERE id=?', [req.params.id]);
-    res.json({ success: true });
+    const trashId = trashAndDelete(db(), 'vol_progress', req.params.id);
+    if (!trashId) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true, trashId });
   }));
 
   // ── PROGRESS ITEMS ─────────────────────────────────────────
@@ -179,8 +189,9 @@ module.exports = (app, getDb, L) => {
   }));
 
   app.delete('/api/progress/:id', wrap((req, res) => {
-    run(db(), 'DELETE FROM progress_items WHERE id=?', [req.params.id]);
-    res.json({ success: true });
+    const trashId = trashAndDelete(db(), 'progress_items', req.params.id);
+    if (!trashId) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true, trashId });
   }));
 
   // ── КАМЕРАЛЬНЫЕ РАБОТЫ ─────────────────────────────────────
@@ -202,10 +213,11 @@ module.exports = (app, getDb, L) => {
   }));
 
   app.delete('/api/kameral/:id', wrap((req, res) => {
-    const d = db();
-    run(d, 'DELETE FROM kameral_remarks WHERE report_id=?', [req.params.id]);
-    run(d, 'DELETE FROM kameral_reports WHERE id=?', [req.params.id]);
-    res.json({ success: true });
+    const trashId = trashAndDelete(db(), 'kameral_reports', req.params.id, {
+      children: [{ table: 'kameral_remarks', fkColumn: 'report_id' }],
+    });
+    if (!trashId) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true, trashId });
   }));
 
   app.post('/api/kameral/:id/remarks', wrap((req, res) => {
@@ -226,8 +238,9 @@ module.exports = (app, getDb, L) => {
   }));
 
   app.delete('/api/remarks/:id', wrap((req, res) => {
-    run(db(), 'DELETE FROM kameral_remarks WHERE id=?', [req.params.id]);
-    res.json({ success: true });
+    const trashId = trashAndDelete(db(), 'kameral_remarks', req.params.id);
+    if (!trashId) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true, trashId });
   }));
 
   // ── SITE TASKS ─────────────────────────────────────────────
@@ -252,8 +265,9 @@ module.exports = (app, getDb, L) => {
   }));
 
   app.delete('/api/tasks/:id', wrap((req, res) => {
-    run(db(), 'DELETE FROM site_tasks WHERE id=?', [req.params.id]);
-    res.json({ success: true });
+    const trashId = trashAndDelete(db(), 'site_tasks', req.params.id);
+    if (!trashId) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true, trashId });
   }));
 
   // ── KML LAYERS PER SITE ────────────────────────────────────

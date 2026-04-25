@@ -1,6 +1,7 @@
 const { v4: uuid } = require('uuid');
 const { all, get, run } = require('../database');
 const { required, wrap } = require('./validate');
+const { trashAndDelete } = require('./realtime');
 
 module.exports = (app, getDb, L) => {
   const db = () => getDb();
@@ -55,9 +56,11 @@ module.exports = (app, getDb, L) => {
     ['pgk_workers', 'pgk_machinery', 'pgk_equipment', 'materials'].forEach(t =>
       run(d, `UPDATE ${t} SET base_id=NULL WHERE base_id=?`, [req.params.id])
     );
-    run(d, 'DELETE FROM site_bases WHERE base_id=?', [req.params.id]);
-    run(d, 'DELETE FROM bases WHERE id=?', [req.params.id]);
-    res.json({ success: true });
+    const trashId = trashAndDelete(d, 'bases', req.params.id, {
+      children: [{ table: 'site_bases', fkColumn: 'base_id' }],
+    });
+    if (!trashId) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true, trashId });
   }));
 
   // ── MATERIALS ──────────────────────────────────────────────
@@ -81,8 +84,9 @@ module.exports = (app, getDb, L) => {
   }));
 
   app.delete('/api/materials/:id', wrap((req, res) => {
-    run(db(), 'DELETE FROM materials WHERE id=?', [req.params.id]);
-    res.json({ success: true });
+    const trashId = trashAndDelete(db(), 'materials', req.params.id);
+    if (!trashId) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true, trashId });
   }));
 
   app.get('/api/materials/summary', wrap((req, res) => {

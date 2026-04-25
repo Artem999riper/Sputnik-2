@@ -329,8 +329,7 @@ async function gtCloseTask(id){
 async function gtDeleteTask(id){
   const t=gtasks.find(x=>x.id===id);if(!t)return;
   if(!confirm(`Удалить задачу «${t.title}»?`))return;
-  await fetch(`${API}/gtasks/${id}`,{method:'DELETE'});
-  await loadGTasks();toast('Удалено','ok');
+  await apiDelUndo(`/gtasks/${id}`,`Задача «${t.title}» удалена`,loadGTasks);
 }
 
 

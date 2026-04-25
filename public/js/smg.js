@@ -1684,8 +1684,25 @@ async function loadDashboard(){
 // BACKUP / RESTORE
 // ═══════════════════════════════════════════════════════════
 async function openBackupModal(){
-  const list=await fetch(`${API}/backups`).then(r=>r.json()).catch(()=>[]);
+  const [list,settings]=await Promise.all([
+    fetch(`${API}/backups`).then(r=>r.json()).catch(()=>[]),
+    fetch(`${API}/backups/settings`).then(r=>r.json()).catch(()=>({interval_hours:2,max_count:10})),
+  ]);
   showModal('💾 Резервные копии',`
+    <div style="background:var(--s2);border-radius:var(--rs);padding:8px 10px;margin-bottom:10px;font-size:11px">
+      <div style="font-weight:700;color:var(--tx2);margin-bottom:5px">⏱ Автозапись</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <label>Интервал, ч:
+          <input id="bk-interval" type="number" min="0" max="168" step="0.5" value="${settings.interval_hours}" style="width:60px;padding:3px 5px;border:1px solid var(--bd);border-radius:4px;font-size:11px">
+        </label>
+        <label>Хранить копий:
+          <input id="bk-max" type="number" min="1" max="200" value="${settings.max_count}" style="width:55px;padding:3px 5px;border:1px solid var(--bd);border-radius:4px;font-size:11px">
+        </label>
+        <button class="btn bp bxs" onclick="saveBackupSettings()">Сохранить</button>
+        <button class="btn bs bxs" onclick="runAutoBackup()" title="Сделать автокопию сейчас">▶ Сейчас</button>
+      </div>
+      <div style="color:var(--tx3);margin-top:4px">0 ч — отключить автокопию. Старые автокопии удаляются по очереди.</div>
+    </div>
     <div style="margin-bottom:10px">
       <button class="btn bp bsm" onclick="createBackup()">💾 Создать резервную копию</button>
     </div>
@@ -1696,6 +1713,18 @@ async function openBackupModal(){
         <button class="btn bs bxs" onclick="restoreBackup('${esc(f.name)}')">↩️ Восст.</button>
       </div>`).join(''):'<div class="empty">Нет резервных копий</div>'}
     </div>`,[{label:'Закрыть',cls:'bs',fn:closeModal}]);
+}
+async function saveBackupSettings(){
+  const ih=parseFloat(document.getElementById('bk-interval').value);
+  const mc=parseInt(document.getElementById('bk-max').value);
+  const r=await fetch(`${API}/backups/settings`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({interval_hours:ih,max_count:mc})}).then(r=>r.json()).catch(()=>({error:'Ошибка'}));
+  if(r.ok||r.interval_hours!=null)toast(`Автокопия каждые ${r.interval_hours} ч, хранить ${r.max_count}`,'ok');
+  else toast('Ошибка: '+(r.error||''),'err');
+}
+async function runAutoBackup(){
+  const r=await fetch(`${API}/backups/run-auto`,{method:'POST'}).then(r=>r.json()).catch(()=>({error:'Ошибка'}));
+  if(r.ok){toast('Автокопия создана','ok');closeModal();openBackupModal();}
+  else toast('Ошибка: '+(r.error||''),'err');
 }
 async function createBackup(){
   const r=await fetch(`${API}/backups/create`,{method:'POST'}).then(r=>r.json()).catch(()=>({error:'Ошибка'}));

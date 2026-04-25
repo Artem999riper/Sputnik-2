@@ -289,9 +289,10 @@ function openVolProgressHistoryModal(volId){
 }
 async function deleteVolProgress(id,volId){
   if(!confirm('Удалить запись?'))return;
-  await fetch(`${API}/vol_progress/${id}`,{method:'DELETE'});
-  await refreshCurrent();currentTab='volumes';renderTab();closeModal();
-  openVolProgressHistoryModal(volId);
+  await apiDelUndo(`/vol_progress/${id}`,'Запись удалена',async()=>{
+    await refreshCurrent();currentTab='volumes';renderTab();
+  });
+  closeModal();openVolProgressHistoryModal(volId);
 }
 
 async function autoRecalcPct(){

@@ -48,6 +48,39 @@ function toast(msg,type){
   c.appendChild(el);setTimeout(()=>el.remove(),3200);
 }
 
+// Удаление через API с автоматической поддержкой "Отменить", если сервер вернул trashId
+async function apiDelUndo(url,msg,refresh){
+  let r; try{r=await fetch(`${API}${url}`,{method:'DELETE'}).then(r=>r.json());}catch(e){r={error:'Ошибка сети'};}
+  if(r&&r.error){toast('Ошибка: '+r.error,'err');return false;}
+  if(refresh){try{await refresh();}catch(e){}}
+  if(r&&r.trashId)toastUndo(msg||'Удалено',r.trashId,refresh);
+  else toast(msg||'Удалено','ok');
+  return true;
+}
+
+// Тост с кнопкой "Отменить" — для destructive действий с серверной корзиной (TTL 60 с)
+function toastUndo(msg,trashId,onUndone){
+  if(!trashId){toast(msg,'ok');return;}
+  const c=document.getElementById('toasts');
+  const el=document.createElement('div');el.className='toast ok';
+  el.style.display='flex';el.style.alignItems='center';el.style.gap='12px';
+  const span=document.createElement('span');span.textContent=msg;
+  const btn=document.createElement('button');
+  btn.textContent='↩ Отменить';
+  btn.style.cssText='background:rgba(255,255,255,.25);border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit';
+  btn.onclick=async function(){
+    btn.disabled=true;btn.textContent='…';
+    try{
+      const r=await fetch(`${API}/restore/${encodeURIComponent(trashId)}`,{method:'POST'}).then(r=>r.json());
+      if(r&&r.ok){toast('Восстановлено','ok');try{onUndone&&onUndone();}catch(e){}}
+      else toast('Не удалось отменить: '+(r&&r.error||'истёк срок'),'err');
+    }catch(e){toast('Ошибка отмены','err');}
+    el.remove();
+  };
+  el.appendChild(span);el.appendChild(btn);
+  c.appendChild(el);setTimeout(()=>el.remove(),8000);
+}
+
 // ═══════════════════════════════════════════════════════════
 // 🔔 СИСТЕМА УВЕДОМЛЕНИЙ
 // ═══════════════════════════════════════════════════════════

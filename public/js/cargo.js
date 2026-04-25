@@ -514,10 +514,7 @@ async function gruzArrived(id){
 async function gruzDeleteOrder(id){
   const o=gruzOrders.find(x=>x.id===id);if(!o)return;
   if(!confirm(`Удалить заявку №${o.num}?`))return;
-  try{
-    await fetch(`${API}/cargo/${id}`,{method:'DELETE'});
-    await loadGruz();toast('Удалено','ok');
-  }catch(e){toast('Ошибка','err');}
+  await apiDelUndo(`/cargo/${id}`,`Заявка №${o.num} удалена`,loadGruz);
 }
 // ═══════════════════════════════════════════════════════════
 // 📋 ГЛОБАЛЬНЫЕ ЗАДАЧИ

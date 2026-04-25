@@ -105,8 +105,7 @@ async function kamEditReport(id,siteId){
 }
 async function kamDelReport(id,siteId){
   if(!confirm('Удалить специалиста и все его замечания?'))return;
-  await fetch(`${API}/kameral/${id}`,{method:'DELETE'});
-  await renderKam(siteId);toast('Удалено','ok');
+  await apiDelUndo(`/kameral/${id}`,'Камеральщик удалён',()=>renderKam(siteId));
 }
 async function kamAddRemark(reportId,siteId){
   showModal('＋ Замечание',`<div class="fgr">
@@ -128,8 +127,7 @@ async function kamToggleRemark(id,siteId){
   await renderKam(siteId);
 }
 async function kamDelRemark(id,siteId){
-  await fetch(`${API}/remarks/${id}`,{method:'DELETE'});
-  await renderKam(siteId);toast('Удалено','ok');
+  await apiDelUndo(`/remarks/${id}`,'Замечание удалено',()=>renderKam(siteId));
 }
 
 let CTX_ACTIONS=[];

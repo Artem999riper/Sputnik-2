@@ -84,65 +84,38 @@ async function openPersonnelReport(){
 
 function exportPersonnelExcel(workers){
   const wb=XLSX.utils.book_new();
-  const today=new Date();
-  const todayStr=today.toLocaleDateString('ru');
-
-  // Group by equipment (machine), matching "Список людей.xlsx" structure
-  const byMachine={};
-  workers.forEach(w=>{
-    const key=w.machine_name||'— Техника не указана';
-    if(!byMachine[key])byMachine[key]={location:w.base_name||'',workers:[]};
-    byMachine[key].workers.push(w);
-  });
-
+  const today=new Date().toLocaleDateString('ru');
   const aoa=[
-    ['Список специалистов ПурГеоКом'],
-    ['на дату:',todayStr],
+    ['Отчёт по персоналу ПурГеоКом — '+today],
     [],
-    ['Привязка специалистов к технике ПГК'],
-    ['№№','Наименование техники','Местоположение','Комплектность бригады, ФИО','Должность','Дата заезда','Дней в поле','Телефон'],
+    ['Сотрудник','Должность','Телефон','База','Техника','Дата заезда','Дней в поле','Примечания'],
+    ...workers.map(w=>[
+      w.name||'',w.role||'',w.phone||'',w.base_name||'',
+      w.machine_name||'',w.start_date||'',
+      w.field_days!==null?w.field_days:'',w.notes||''
+    ])
   ];
-
-  let rowNum=1;
-  Object.entries(byMachine).forEach(([machineName,group])=>{
-    group.workers.forEach((w,i)=>{
-      aoa.push([
-        i===0?rowNum++:'',
-        i===0?machineName:'',
-        i===0?(group.location||''):'',
-        w.name||'',
-        w.role||'',
-        w.start_date||'',
-        w.field_days!==null?w.field_days:'',
-        w.phone||''
-      ]);
-    });
-    aoa.push([]);
-  });
-
-  const ws1=XLSX.utils.aoa_to_sheet(aoa);
-  ws1['!cols']=[{wch:5},{wch:20},{wch:22},{wch:28},{wch:22},{wch:14},{wch:12},{wch:16}];
-  XLSX.utils.book_append_sheet(wb,ws1,'Для ПГК');
-
-  // Summary by base
-  const byBase={};
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols']=[{wch:25},{wch:20},{wch:15},{wch:20},{wch:18},{wch:12},{wch:12},{wch:25}];
+  // Summary sheet
+  const baseGroups={};
   workers.forEach(w=>{
-    const bn=w.base_name||'— Без базы';
-    if(!byBase[bn])byBase[bn]=[];
-    byBase[bn].push(w);
+    if(!baseGroups[w.base_name])baseGroups[w.base_name]=[];
+    baseGroups[w.base_name].push(w);
   });
   const sumAoa=[
-    ['Сводка по базам — '+todayStr],
+    ['Сводка по базам'],
     ['База','Кол-во','Ср. дней в поле','30+ дней'],
-    ...Object.entries(byBase).map(([bn,ww])=>[
+    ...Object.entries(baseGroups).map(([bn,ww])=>[
       bn,ww.length,
       ww.filter(w=>w.field_days!==null).length?
         Math.round(ww.filter(w=>w.field_days!==null).reduce((a,w)=>a+w.field_days,0)/ww.filter(w=>w.field_days!==null).length):0,
       ww.filter(w=>(w.field_days||0)>=30).length
     ])
   ];
+  XLSX.utils.book_append_sheet(wb,ws,'Персонал');
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(sumAoa),'По базам');
-  XLSX.writeFile(wb,'Персонал_'+todayStr.replace(/\./g,'_')+'.xlsx');
+  XLSX.writeFile(wb,'Персонал_'+today.replace(/\./g,'_')+'.xlsx');
   toast('Excel сохранён','ok');
 }
 
@@ -298,12 +271,65 @@ async function initApp(){
     loadGTasks(),
   ]);
   setTimeout(showDailyDigest, 500);
-  // Автообновление каждые 30 сек
-  setInterval(loadAll, 30000);
-  // Обновление бейджей грузов и задач каждые 60 сек
-  setInterval(function(){ try{loadGruz();}catch(e){} try{loadGTasks();}catch(e){} }, 60000);
+  // SSE подписка на серверные события — push-обновления вместо частого polling
+  startSseListener();
+  // Подстраховка: редкий polling на случай разрыва SSE
+  setInterval(loadAll, 120000);
+  setInterval(function(){ try{loadGruz();}catch(e){} try{loadGTasks();}catch(e){} }, 180000);
   setTimeout(startNotifPolling, 3000);
 }
+
+// ═══════════════════════════════════════════════════════════
+// SSE CLIENT — слушает /api/events, дебаунсит обновления данных
+// ═══════════════════════════════════════════════════════════
+let _sseSrc = null;
+let _sseTimer = null;
+let _sseGruzTimer = null;
+function startSseListener(){
+  if(typeof EventSource==='undefined')return;
+  function connect(){
+    try{
+      _sseSrc=new EventSource(`${API}/events`);
+      _sseSrc.onmessage=function(e){
+        let ev; try{ev=JSON.parse(e.data);}catch(_){return;}
+        if(ev.type!=='change')return;
+        handleSseChange(ev);
+      };
+      _sseSrc.onerror=function(){
+        try{_sseSrc.close();}catch(_){}
+        _sseSrc=null;
+        setTimeout(connect,5000);
+      };
+    }catch(e){setTimeout(connect,5000);}
+  }
+  connect();
+}
+function handleSseChange(ev){
+  const url=ev.url||'';
+  // Перерисовка текущего объекта в панели — если изменилось то, что относится к нему
+  if(typeof currentObj!=='undefined'&&currentObj){
+    const id=currentObj.id;
+    if(id&&url.indexOf(id)>=0){
+      if(_sseTimer)clearTimeout(_sseTimer);
+      _sseTimer=setTimeout(function(){try{refreshCurrent&&refreshCurrent();}catch(e){}},400);
+    }
+  }
+  // Грузы / задачи — отдельный дебаунс
+  if(url.indexOf('/cargo')>=0||url.indexOf('/gtasks')>=0||url.indexOf('/tasks')>=0||url.indexOf('/notifications')>=0){
+    if(_sseGruzTimer)clearTimeout(_sseGruzTimer);
+    _sseGruzTimer=setTimeout(function(){
+      try{loadGruz&&loadGruz();}catch(e){}
+      try{loadGTasks&&loadGTasks();}catch(e){}
+      try{fetchNotifs&&fetchNotifs();}catch(e){}
+    },600);
+  }
+  // Базовые сущности — общий дебаунсированный loadAll
+  if(url.match(/\/(sites|bases|layers|pgk|materials|volumes|vol_progress|kameral|remarks|machinery|workers|equipment)/)){
+    if(_sseAllTimer)clearTimeout(_sseAllTimer);
+    _sseAllTimer=setTimeout(function(){try{loadAll&&loadAll();}catch(e){}},900);
+  }
+}
+let _sseAllTimer=null;
 
 
 // ═══════════════════════════════════════════════════════════
