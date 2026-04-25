@@ -270,7 +270,6 @@ async function initApp(){
     loadGruz(),
     loadGTasks(),
   ]);
-  setTimeout(showDailyDigest, 500);
   // SSE подписка на серверные события — push-обновления вместо частого polling
   startSseListener();
   // Подстраховка: редкий polling на случай разрыва SSE

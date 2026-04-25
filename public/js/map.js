@@ -2,8 +2,10 @@ function initMap(){
   map=L.map('map',{center:[62,55],zoom:5,zoomControl:false,attributionControl:false});
   const osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OSM',maxZoom:19});
   const sat=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{attribution:'© Esri',maxZoom:19});
+  const topo=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{attribution:'© OpenTopoMap (CC-BY-SA)',maxZoom:17,subdomains:['a','b','c']});
   osm.addTo(map);
-  L.control.layers({'🗺 Карта':osm,'🛰 Спутник':sat},{},{position:'topright'}).addTo(map);
+  window._mapBaseLayers={'🗺 Карта':osm,'🛰 Спутник':sat,'🗻 Топо':topo};
+  window._mapLayerCtrl=L.control.layers(window._mapBaseLayers,{},{position:'topright'}).addTo(map);
   L.control.zoom({position:'bottomright'}).addTo(map);
   // Pane для точечных объёмов — поверх vpLayers и KML
   map.createPane('volPointsPane');
@@ -215,9 +217,6 @@ async function loadAll(){
   }
   try{renderSidebar();}catch(e){}
   try{updateStats();}catch(e){}
-  try{if(window._firstAlertCheck===undefined){window._firstAlertCheck=true;checkAlerts();}else{checkAlertsQuiet();}}catch(e){}
-  if(window._firstLoad){window._firstLoad=false;setTimeout(showDailyDigest,800);}
-  try{maybeShowDigest();}catch(e){}
   try{renderLP();}catch(e){}
   try{if(kmlPanelOpen)renderKmlPanel();}catch(e){}
   try{repaintMap();}catch(e){}
