@@ -32,8 +32,10 @@ try {
 const app  = express();
 const PORT = process.env.PORT || 3000;
 app.use(cors());
-// 30 MB было избыточно — крупные KML-слои всё равно лучше дробить.
-// 8 MB достаточно для любых разумных GeoJSON; защищает от случайных DoS.
+// Глобальный лимит — 8 MB для обычных JSON запросов.
+// Для KML/GeoJSON слоёв отдельный лимит 50 MB (применяется до глобального).
+app.use('/api/layers', express.json({ limit: '50mb' }));
+app.use('/api/sites', express.json({ limit: '50mb' }));
 app.use(express.json({ limit: '8mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
