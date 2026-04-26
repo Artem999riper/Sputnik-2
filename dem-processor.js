@@ -37,14 +37,42 @@ function stacSearch(bbox, collection) {
 }
 
 // ── GDAL ───────────────────────────────────────────────────
+const IS_WINDOWS = process.platform === 'win32';
 const GDAL_DIRS = [
   'C:\\OSGeo4W\\bin', 'C:\\OSGeo4W64\\bin',
   'C:\\Program Files\\GDAL', 'C:\\Program Files\\OSGeo4W\\bin',
+];
+const GDAL_DIRS_LINUX = [
+  '/usr/bin', '/usr/local/bin', '/opt/local/bin',
 ];
 let _gdalBin = null, _gdalData = null, _projLib = null, _pythonExe = null;
 
 function findGDALBin() {
   if (_gdalBin) return _gdalBin;
+
+  if (!IS_WINDOWS) {
+    // Linux / macOS — ищем без .exe
+    for (const d of GDAL_DIRS_LINUX) {
+      if (fs.existsSync(path.join(d, 'gdalwarp'))) { _gdalBin = d; break; }
+    }
+    if (!_gdalBin) throw new Error('GDAL не найден. Установите: sudo apt install gdal-bin');
+    _gdalData = process.env.GDAL_DATA || '';
+    _projLib  = process.env.PROJ_LIB  || '';
+    // prefer python version matching gdal bindings (3.12 on Ubuntu 24.04)
+    for (const p of ['/usr/bin/python3.12', '/usr/bin/python3.11', '/usr/local/bin/python3', '/usr/bin/python3', 'python3']) {
+      if (p.startsWith('/') && !fs.existsSync(p)) continue;
+      try {
+        const { execFileSync } = require('child_process');
+        execFileSync(p, ['-c', 'from osgeo import gdal'], { stdio: 'ignore' });
+        _pythonExe = p; break;
+      } catch(e) {}
+    }
+    _pythonExe = _pythonExe || 'python3';
+    console.log('[DEM] GDAL bin:', _gdalBin, '| Python:', _pythonExe);
+    return _gdalBin;
+  }
+
+  // Windows — OSGeo4W
   for (const d of GDAL_DIRS) {
     if (fs.existsSync(path.join(d, 'gdalwarp.exe'))) { _gdalBin = d; break; }
   }
@@ -78,7 +106,6 @@ function findGDALBin() {
           || projCands.find(p => fs.existsSync(p))
           || process.env.PROJ_LIB || '';
 
-  // Python в OSGeo4W
   const pyPaths = [
     path.join(root, 'apps', 'Python312', 'python.exe'),
     path.join(root, 'apps', 'Python39', 'python.exe'),
@@ -94,10 +121,23 @@ function findGDALBin() {
   return _gdalBin;
 }
 
-function gdal(exe) { return path.join(findGDALBin(), exe + '.exe'); }
+function gdal(exe) {
+  return path.join(findGDALBin(), IS_WINDOWS ? exe + '.exe' : exe);
+}
 
 function gdalEnv() {
   findGDALBin();
+  if (!IS_WINDOWS) {
+    return {
+      ...process.env,
+      GDAL_HTTP_CONNECTTIMEOUT: '30',
+      GDAL_HTTP_TIMEOUT: '300',
+      CPL_VSIL_CURL_ALLOWED_EXTENSIONS: '.tif,.vrt,.tiff',
+      GDAL_CACHEMAX: '512',
+      VSI_CACHE: 'TRUE',
+      VSI_CACHE_SIZE: '104857600',
+    };
+  }
   const root = path.resolve(_gdalBin, '..');
   return {
     ...process.env,
@@ -111,7 +151,6 @@ function gdalEnv() {
     GDAL_CACHEMAX: '512',
     VSI_CACHE: 'TRUE',
     VSI_CACHE_SIZE: '104857600',
-    // Python path для OSGeo4W
     PYTHONPATH: [
       path.join(root, 'apps', 'Python312', 'lib', 'site-packages'),
       path.join(root, 'apps', 'Python39',  'lib', 'site-packages'),
@@ -528,13 +567,18 @@ async function processDEM({bbox,projId,proj4,epsg,projName,format,
     );
 
     const zipFile=path.join(tmpDir,'arcticdem_export.zip');
-    const toZip=[outDxf,prjFile,infoFile,...satFiles]
-      .filter(f=>fs.existsSync(f)).map(f=>`'${f}'`).join(',');
+    const filesToZip=[outDxf,prjFile,infoFile,...satFiles].filter(f=>fs.existsSync(f));
     await new Promise((resolve,reject)=>{
-      exec(
-        `powershell -Command "Compress-Archive -Path ${toZip} -DestinationPath '${zipFile}' -Force"`,
-        (err,_,se)=>err?reject(new Error(se||err.message)):resolve()
-      );
+      if (IS_WINDOWS) {
+        const toZip=filesToZip.map(f=>`'${f}'`).join(',');
+        exec(
+          `powershell -Command "Compress-Archive -Path ${toZip} -DestinationPath '${zipFile}' -Force"`,
+          (err,_,se)=>err?reject(new Error(se||err.message)):resolve()
+        );
+      } else {
+        const args=['-j',zipFile,...filesToZip];
+        execFile('zip',args,(err,_,se)=>err?reject(new Error(se||err.message)):resolve());
+      }
     });
 
     return {file:zipFile,tmpDir,log,mime:'application/zip'};
@@ -553,13 +597,13 @@ function cleanupTmp(tmpDir){
 async function checkGDAL(){
   try{
     const bin=findGDALBin();
-    const {stdout}=await execFileP(path.join(bin,'gdalinfo.exe'),['--version'],{env:gdalEnv()});
+    const {stdout}=await execFileP(gdal('gdalinfo'),['--version'],{env:gdalEnv()});
     return {available:true,version:stdout.trim(),path:bin,
             gdal_data:_gdalData,python:_pythonExe,
-            has_proj_db:fs.existsSync(path.join(_projLib||'','proj.db'))};
+            has_proj_db:_projLib?fs.existsSync(path.join(_projLib,'proj.db')):null};
   }catch(e){
     return {available:false,reason:e.message,
-            hint:'Установите OSGeo4W: https://trac.osgeo.org/osgeo4w/'};
+            hint:IS_WINDOWS?'Установите OSGeo4W: https://trac.osgeo.org/osgeo4w/':'Установите: sudo apt install gdal-bin'};
   }
 }
 
