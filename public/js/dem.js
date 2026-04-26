@@ -426,16 +426,7 @@ async function demExport() {
     setProgress(0, '');
     if (progWrap) progWrap.style.display = 'none';
     btns.forEach(b => b.disabled = false);
+    toast('❌ ' + err.message, 'err');
     console.error('DEM export error:', err);
-    // Показываем полный текст ошибки в модальном окне (текст может быть длинным)
-    const msg = err.message || 'Неизвестная ошибка';
-    if (msg.length > 80 || msg.includes('stac') || msg.includes('ArcticDEM') || msg.includes('VPN')) {
-      showModal('❌ Ошибка выгрузки рельефа',
-        `<div style="font-size:12px;line-height:1.7;color:var(--tx1)">${esc(msg)}</div>`,
-        [{ label: 'Закрыть', cls: 'bs', fn: closeModal }]
-      );
-    } else {
-      toast('❌ ' + msg, 'err');
-    }
   }
 }

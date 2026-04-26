@@ -47,6 +47,22 @@ function stacSearch(bbox, collection) {
   });
 }
 
+// ── Прямые S3-URLs (fallback без STAC) ────────────────────
+// ArcticDEM mosaics v4.1: тайлы 1°×1°, имя n62e068, n61e073 и т.д.
+function _buildDirectDemUrls(bbox, res) {
+  const BASE = 'https://pgc-opendata-dems.s3.us-east-1.amazonaws.com/arcticdem/mosaics/v4.1';
+  const urls = [];
+  for (let lat = Math.floor(bbox.minLat); lat <= Math.floor(bbox.maxLat); lat++) {
+    for (let lng = Math.floor(bbox.minLng); lng <= Math.floor(bbox.maxLng); lng++) {
+      const latS = lat >= 0 ? `n${String(lat).padStart(2,'0')}` : `s${String(-lat).padStart(2,'0')}`;
+      const lngS = lng >= 0 ? `e${String(lng).padStart(3,'0')}` : `w${String(-lng).padStart(3,'0')}`;
+      const id   = `${latS}${lngS}`;
+      urls.push(`/vsicurl/${BASE}/${res}/${id}/${id}_${res}_v4.1_dem.tif`);
+    }
+  }
+  return urls;
+}
+
 // ── GDAL ───────────────────────────────────────────────────
 const IS_WINDOWS = process.platform === 'win32';
 const GDAL_DIRS = [
@@ -382,32 +398,43 @@ async function processDEM({bbox,projId,proj4,epsg,projName,format,
     if (areaKm2>2000) throw new Error(`Слишком большая область: ${areaKm2.toFixed(0)} км². Макс 2000.`);
     log.push(`Area: ${areaKm2.toFixed(1)} km²`);
 
-    // 1. STAC
+    // 1. Поиск тайлов ArcticDEM: STAC → прямые S3-URLs как fallback
     onProgress&&onProgress(8,'Поиск тайлов ArcticDEM...');
-    let stacItems=[],usedRes='10m',stacErr=null;
+    let tifUrls=[],usedRes='2m';
+    let stacOk=false;
     try {
       const r2=await stacSearch(bbox,'arcticdem-mosaics-v4.1-2m');
-      if ((r2.features||[]).length){stacItems=r2.features;usedRes='2m';}
-    } catch(e){ stacErr=e; log.push('2m:'+e.message.slice(0,60)); }
-    if (!stacItems.length){
+      if ((r2.features||[]).length){
+        usedRes='2m'; stacOk=true;
+        tifUrls=r2.features.map(item=>{
+          const a=item.assets||{};
+          const k=Object.keys(a).find(k=>k==='dem'||k.endsWith('_dem'))||Object.keys(a)[0];
+          return a[k]?.href;
+        }).filter(Boolean).map(u=>u.startsWith('s3://')?'/vsis3/'+u.slice(5):'/vsicurl/'+u);
+      }
+    } catch(e){ log.push('STAC 2m: '+e.message.slice(0,60)); }
+    if (!tifUrls.length){
       try {
         const r10=await stacSearch(bbox,'arcticdem-mosaics-v4.1-10m');
-        stacItems=r10.features||[];
-      } catch(e){ stacErr=e; log.push('10m:'+e.message.slice(0,60)); }
+        if ((r10.features||[]).length){
+          usedRes='10m'; stacOk=true;
+          tifUrls=r10.features.map(item=>{
+            const a=item.assets||{};
+            const k=Object.keys(a).find(k=>k==='dem'||k.endsWith('_dem'))||Object.keys(a)[0];
+            return a[k]?.href;
+          }).filter(Boolean).map(u=>u.startsWith('s3://')?'/vsis3/'+u.slice(5):'/vsicurl/'+u);
+        }
+      } catch(e){ log.push('STAC 10m: '+e.message.slice(0,60)); }
     }
-    if (!stacItems.length) {
-      const hint = stacErr && (stacErr.message.includes('ETIMEDOUT')||stacErr.message.includes('Таймаут')||stacErr.message.includes('timeout'))
-        ? 'Сервер ArcticDEM недоступен с вашей сети. Требуется доступ к stac.pgc.umn.edu:443 (порт 443). Попробуйте VPN или проверьте настройки прокси/файрвола.'
-        : 'Нет данных ArcticDEM для выбранной области';
-      throw new Error(hint);
+    // Fallback: STAC недоступен — строим URLs прямо по сетке 1°×1°
+    if (!tifUrls.length){
+      log.push('STAC недоступен — прямые S3 URLs');
+      onProgress&&onProgress(8,'Прямое подключение к S3 ArcticDEM...');
+      tifUrls=_buildDirectDemUrls(bbox,'2m');
+      usedRes='2m';
+      if (!tifUrls.length) throw new Error('Не удалось определить тайлы ArcticDEM для выбранной области');
     }
-    log.push(`STAC: ${stacItems.length} tiles (${usedRes})`);
-
-    const tifUrls=stacItems.map(item=>{
-      const a=item.assets||{};
-      const k=Object.keys(a).find(k=>k==='dem'||k.endsWith('_dem'))||Object.keys(a)[0];
-      return a[k]?.href;
-    }).filter(Boolean).map(u=>u.startsWith('s3://')?'/vsis3/'+u.slice(5):'/vsicurl/'+u);
+    log.push(`Tiles: ${tifUrls.length} (${usedRes}${stacOk?'':' via S3'})`);
 
     // 2. VRT + clip
     onProgress&&onProgress(15,`Загрузка ArcticDEM ${usedRes}...`);
