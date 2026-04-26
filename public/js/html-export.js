@@ -6,7 +6,7 @@ var _htmlExDraw   = false;
 var _htmlExStart  = null;
 var _htmlExTmp    = null;
 var _htmlExSiteId = null;
-var _htmlExOpts   = {tile:'map', kmlIds:[]};
+var _htmlExOpts   = {tile:'map', kmlIds:[], coordSys:'wgs'};
 
 // ── Открыть диалог выбора параметров ─────────────────────
 function openHtmlExportModal(siteId) {
@@ -42,6 +42,14 @@ function openHtmlExportModal(siteId) {
         </div>
         <div style="font-size:10px;color:var(--tx3);margin-top:4px">В HTML-файле будет кнопка переключения подложки</div>
       </div>
+      <div style="margin-bottom:14px">
+        <div style="font-size:11px;font-weight:700;color:var(--tx2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px">Система координат</div>
+        <div style="display:flex;gap:6px">
+          <label style="${radioStyle}"><input type="radio" name="hcoord" value="wgs" checked> WGS-84</label>
+          <label style="${radioStyle}"><input type="radio" name="hcoord" value="msk"> МСК-86/89</label>
+          <label style="${radioStyle}"><input type="radio" name="hcoord" value="gsk"> ГСК-2011</label>
+        </div>
+      </div>
       ${kmlBlock}
       <div>
         <div style="font-size:11px;font-weight:700;color:var(--tx2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px">Область</div>
@@ -69,8 +77,10 @@ function _htmlExToggleAllKml(check) {
 }
 
 function _htmlExApplyOpts() {
-  const tileEl = document.querySelector('input[name="htile"]:checked');
-  _htmlExOpts.tile   = tileEl ? tileEl.value : 'map';
+  const tileEl  = document.querySelector('input[name="htile"]:checked');
+  const coordEl = document.querySelector('input[name="hcoord"]:checked');
+  _htmlExOpts.tile     = tileEl  ? tileEl.value  : 'map';
+  _htmlExOpts.coordSys = coordEl ? coordEl.value : 'wgs';
   _htmlExOpts.kmlIds = (layers||[])
     .filter(l => l.geojson && document.getElementById('kml-exp-'+l.id)?.checked)
     .map(l => l.id);
@@ -236,22 +246,48 @@ function _htmlExAnyCoordInBbox(geom, bbox) {
     lat>=bbox.minLat&&lat<=bbox.maxLat&&lng>=bbox.minLng&&lng<=bbox.maxLng);
 }
 
+// ── Конвертация координат в выбранную СК ─────────────────
+function _exFmtCoord(lat, lng, sys) {
+  try {
+    if (sys === 'msk' && typeof wgsToMsk === 'function') {
+      const c = wgsToMsk(lat, lng);
+      return { a: c.northing.toFixed(2), b: c.easting.toFixed(2), zone: c.zone };
+    }
+    if (sys === 'gsk' && typeof wgsToGsk === 'function') {
+      const c = wgsToGsk(lat, lng);
+      return { a: c.northing.toFixed(2), b: c.easting.toFixed(2), zone: c.zone };
+    }
+  } catch(e) {}
+  return { a: lat.toFixed(6), b: lng.toFixed(6), zone: null };
+}
+
 // ── Сборка HTML ───────────────────────────────────────────
 function _buildHtmlExport(siteName, bbox, pts, kmlData, SEM_LABEL, dateStr, opts) {
   const he = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
-  const mapData = pts.map((p,i) => ({
-    i:i+1, lat:p.lat, lng:p.lng, color:p.color,
-    n:p.volName, dt:p.date,
-    cat:p.cat==='geology'?'Геология':'Геодезия',
-    sl:SEM_LABEL[p.sem.type]||p.sem.type||'',
-    d:p.sem.data||{}
-  }));
+  const sys = (opts && opts.coordSys) || 'wgs';
+  const sysLabel = sys === 'msk' ? 'МСК-86/89' : sys === 'gsk' ? 'ГСК-2011' : 'WGS-84';
+  const colA = sys === 'wgs' ? 'Широта'  : 'X (северн.)';
+  const colB = sys === 'wgs' ? 'Долгота' : 'Y (восточ.)';
+  const showZone = sys !== 'wgs';
+
+  const mapData = pts.map((p,i) => {
+    const c = _exFmtCoord(p.lat, p.lng, sys);
+    return {
+      i:i+1, lat:p.lat, lng:p.lng, color:p.color,
+      n:p.volName, dt:p.date,
+      cat:p.cat==='geology'?'Геология':'Геодезия',
+      sl:SEM_LABEL[p.sem.type]||p.sem.type||'',
+      d:p.sem.data||{},
+      ca:c.a, cb:c.b, cz:c.zone
+    };
+  });
 
   const rows = pts.map((p,i) => {
     const d = p.sem.data||{};
     const cat = p.cat==='geology'?'Геология':'Геодезия';
     const sl  = SEM_LABEL[p.sem.type]||p.sem.type||'—';
+    const c = _exFmtCoord(p.lat, p.lng, sys);
     return `<tr>
       <td>${i+1}</td>
       <td>${he(p.volName)}</td>
@@ -261,8 +297,9 @@ function _buildHtmlExport(siteName, bbox, pts, kmlData, SEM_LABEL, dateStr, opts
       <td>${he(d.depth||'')}</td><td>${he(d.diam||'')}</td><td>${he(d.ugv||'')}</td>
       <td>${he(d.date||'')}</td><td>${he(d.exec||'')}</td>
       <td>${he(d.desc||d.note||'')}</td>
-      <td style="font-family:monospace;font-size:10px;white-space:nowrap">${p.lat.toFixed(6)}</td>
-      <td style="font-family:monospace;font-size:10px;white-space:nowrap">${p.lng.toFixed(6)}</td>
+      <td style="font-family:monospace;font-size:10px;white-space:nowrap">${c.a}</td>
+      <td style="font-family:monospace;font-size:10px;white-space:nowrap">${c.b}</td>
+      ${showZone?`<td style="font-family:monospace;font-size:10px">${c.zone||''}</td>`:''}
     </tr>`;
   }).join('');
 
@@ -303,6 +340,7 @@ tr:hover td{background:#f8fafc}
     <div class="sub">Экспорт ${dateStr} · ${pts.length} точек${kmlData.length?' · '+kmlData.length+' KML слоёв':''}</div>
   </div>
   <div class="sub" style="text-align:right">
+    Координаты: <b>${sysLabel}</b><br>
     ${bbox.minLat.toFixed(5)}&thinsp;…&thinsp;${bbox.maxLat.toFixed(5)} с.ш.<br>
     ${bbox.minLng.toFixed(5)}&thinsp;…&thinsp;${bbox.maxLng.toFixed(5)} в.д.
   </div>
@@ -319,7 +357,7 @@ tr:hover td{background:#f8fafc}
       <th>#</th><th>Объём</th><th>Дата записи</th><th>Категория</th><th>Тип</th>
       <th>Глубина (м)</th><th>Диаметр (мм)</th><th>УГВ (м)</th>
       <th>Дата</th><th>Исполнитель</th><th>Описание</th>
-      <th>Широта</th><th>Долгота</th>
+      <th>${colA}</th><th>${colB}</th>${showZone?'<th>Зона</th>':''}
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>
@@ -393,7 +431,8 @@ PTS.forEach(function(p){
   if(d.date)  pop+='<br>📅 '+d.date;
   if(d.exec)  pop+='<br>👤 '+d.exec;
   if(d.desc||d.note) pop+='<br>📋 '+(d.desc||d.note);
-  pop+='<br><span style="font-size:10px;color:#94a3b8;font-family:monospace">'+p.lat.toFixed(6)+', '+p.lng.toFixed(6)+'</span>';
+  var coordStr = (p.cz!=null) ? (p.ca+', '+p.cb+' (зона '+p.cz+')') : (p.ca+', '+p.cb);
+  pop+='<br><span style="font-size:10px;color:#94a3b8;font-family:monospace">'+coordStr+'</span>';
   pop+='<\/div>';
   L.marker([p.lat,p.lng],{icon:icon})
     .bindPopup(pop)

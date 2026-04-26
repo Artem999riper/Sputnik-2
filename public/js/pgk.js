@@ -2006,7 +2006,34 @@ function startVolDraw(volId, drawAction){
 
 function addDrawPt(ll){
   if(!drawMode)return;
-  drawPts.push([ll.lat,ll.lng]);updateDrawPreview();
+  const snap=_snapToKml(ll,20);
+  drawPts.push([snap.lat,snap.lng]);
+  if(snap.snapped)toast('📌 Привязано к KML','ok');
+  updateDrawPreview();
+}
+function _snapToKml(ll,pxRadius){
+  if(!window.map||!lGroups)return{lat:ll.lat,lng:ll.lng,snapped:false};
+  const target=map.latLngToContainerPoint(ll);
+  let best=null,bestDist=pxRadius;
+  for(const layerId in lGroups){
+    const g=lGroups[layerId];
+    if(!g||!map.hasLayer(g))continue;
+    g.eachLayer(sub=>{
+      if(typeof sub.getLatLng==='function'){
+        const p=map.latLngToContainerPoint(sub.getLatLng());
+        const d=Math.hypot(p.x-target.x,p.y-target.y);
+        if(d<bestDist){bestDist=d;best=sub.getLatLng();}
+      }else if(typeof sub.getLatLngs==='function'){
+        const flat=sub.getLatLngs().flat(2);
+        flat.forEach(latlng=>{
+          const p=map.latLngToContainerPoint(latlng);
+          const d=Math.hypot(p.x-target.x,p.y-target.y);
+          if(d<bestDist){bestDist=d;best=latlng;}
+        });
+      }
+    });
+  }
+  return best?{lat:best.lat,lng:best.lng,snapped:true}:{lat:ll.lat,lng:ll.lng,snapped:false};
 }
 function updateDrawPreview(){
   if(drawTmpLayer){map.removeLayer(drawTmpLayer);drawTmpLayer=null;}

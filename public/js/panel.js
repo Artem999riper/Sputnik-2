@@ -848,7 +848,6 @@ async function doMoveMachine(ll){
   if(currentObj)await refreshCurrent();else await loadAll();
 }
 
-async function toggleLVis(id,vis){const l=layers.find(x=>x.id===id);if(!l)return;await fetch(`${API}/layers/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:l.name,color:l.color,visible:vis})});l.visible=vis;renderLP();renderLayerGroups();}
 // ═══════════════════════════════════════════════════════════
 // SITE PANEL TABS
 // ═══════════════════════════════════════════════════════════

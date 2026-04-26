@@ -234,8 +234,6 @@ async function removeMachFromMap(mach,baseId){
 function toggleLP(){document.getElementById('lp').classList.toggle('show');}
 function renderLP(){
   const ll=document.getElementById('lp-list');
-  // Обновляем секцию рельефа при каждом открытии панели слоёв
-  try{if(typeof renderTerrainPanel==='function')renderTerrainPanel();}catch(e){}
   if(!layers.length){ll.innerHTML='<div style="padding:8px 9px;font-size:11px;color:var(--tx3)">Нет KML/GPX слоёв</div>';return;}
   ll.innerHTML=layers.map(l=>{
     const lblOn=!!layerLabels[l.id];

@@ -16,6 +16,7 @@
 // ═══════════════════════════════════════════════════════════
 
 let coordSys = 'wgs';
+let wgsFormat = 'dec'; // 'dec' | 'dms' — переключается повторным кликом WGS-84
 
 // ── Proj4 строки (из Proj4.Defines.pas SASPlanet) ─────────
 const _WGS84 = '+proj=longlat +datum=WGS84 +no_defs';
@@ -60,7 +61,17 @@ function wgsToGsk(lat, lon) {
 function formatWGS(lat, lon) {
   const latH = lat >= 0 ? 'N' : 'S';
   const lonH = lon >= 0 ? 'E' : 'W';
+  if (wgsFormat === 'dms') {
+    return `${_toDMS(Math.abs(lat))} ${latH}&nbsp;&nbsp;${_toDMS(Math.abs(lon))} ${lonH}`;
+  }
   return `${Math.abs(lat).toFixed(6)}° ${latH}&nbsp;&nbsp;${Math.abs(lon).toFixed(6)}° ${lonH}`;
+}
+function _toDMS(deg) {
+  const d = Math.floor(deg);
+  const mFloat = (deg - d) * 60;
+  const m = Math.floor(mFloat);
+  const s = ((mFloat - m) * 60).toFixed(2);
+  return `${d}°${String(m).padStart(2,'0')}′${String(s).padStart(5,'0')}″`;
 }
 
 function formatProjected(c) {
@@ -151,6 +162,12 @@ function updateCoordWidgetVisibility() {
 }
 
 function setCoordSys(sys) {
+  if (sys === 'wgs' && coordSys === 'wgs') {
+    wgsFormat = wgsFormat === 'dec' ? 'dms' : 'dec';
+    const btn = document.querySelector('.csb[data-s="wgs"]');
+    if (btn) btn.textContent = wgsFormat === 'dms' ? 'WGS-84 °′″' : 'WGS-84';
+    return;
+  }
   coordSys = sys;
   document.querySelectorAll('.csb').forEach(b => b.classList.toggle('on', b.dataset.s === sys));
 }
