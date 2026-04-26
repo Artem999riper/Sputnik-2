@@ -14,6 +14,8 @@ const execFileP = promisify(execFile);
 const execP     = promisify(exec);
 
 // ── STAC API ───────────────────────────────────────────────
+const STAC_TIMEOUT_MS = 15000; // 15 секунд — быстрый таймаут
+
 function stacSearch(bbox, collection) {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({
@@ -21,17 +23,26 @@ function stacSearch(bbox, collection) {
       bbox: [bbox.minLng, bbox.minLat, bbox.maxLng, bbox.maxLat],
       limit: 20,
     });
+    let settled = false;
+    const done = (fn, v) => { if (settled) return; settled = true; clearTimeout(connTimer); fn(v); };
+
+    // Жёсткий таймер на соединение (ETIMEDOUT может висеть несколько минут)
+    const connTimer = setTimeout(() => {
+      try { req.destroy(); } catch(e) {}
+      done(reject, new Error('Таймаут подключения к ArcticDEM STAC API (15 сек). Проверьте доступ к stac.pgc.umn.edu:443'));
+    }, STAC_TIMEOUT_MS);
+
     const req = https.request({
       hostname: 'stac.pgc.umn.edu', path: '/api/v1/search', method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-      timeout: 30000,
+      timeout: STAC_TIMEOUT_MS,
     }, res => {
       let d = '';
       res.on('data', c => d += c);
-      res.on('end', () => { try { resolve(JSON.parse(d)); } catch(e) { reject(e); } });
+      res.on('end', () => { try { done(resolve, JSON.parse(d)); } catch(e) { done(reject, e); } });
     });
-    req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error('STAC timeout')); });
+    req.on('error', e => done(reject, e));
+    req.on('timeout', () => { req.destroy(); done(reject, new Error('STAC socket timeout')); });
     req.write(body); req.end();
   });
 }
@@ -373,16 +384,23 @@ async function processDEM({bbox,projId,proj4,epsg,projName,format,
 
     // 1. STAC
     onProgress&&onProgress(8,'Поиск тайлов ArcticDEM...');
-    let stacItems=[],usedRes='10m';
+    let stacItems=[],usedRes='10m',stacErr=null;
     try {
       const r2=await stacSearch(bbox,'arcticdem-mosaics-v4.1-2m');
       if ((r2.features||[]).length){stacItems=r2.features;usedRes='2m';}
-    } catch(e){ log.push('2m:'+e.message.slice(0,40)); }
+    } catch(e){ stacErr=e; log.push('2m:'+e.message.slice(0,60)); }
     if (!stacItems.length){
-      const r10=await stacSearch(bbox,'arcticdem-mosaics-v4.1-10m');
-      stacItems=r10.features||[];
+      try {
+        const r10=await stacSearch(bbox,'arcticdem-mosaics-v4.1-10m');
+        stacItems=r10.features||[];
+      } catch(e){ stacErr=e; log.push('10m:'+e.message.slice(0,60)); }
     }
-    if (!stacItems.length) throw new Error('Нет данных ArcticDEM для этой области');
+    if (!stacItems.length) {
+      const hint = stacErr && (stacErr.message.includes('ETIMEDOUT')||stacErr.message.includes('Таймаут')||stacErr.message.includes('timeout'))
+        ? 'Сервер ArcticDEM недоступен с вашей сети. Требуется доступ к stac.pgc.umn.edu:443 (порт 443). Попробуйте VPN или проверьте настройки прокси/файрвола.'
+        : 'Нет данных ArcticDEM для выбранной области';
+      throw new Error(hint);
+    }
     log.push(`STAC: ${stacItems.length} tiles (${usedRes})`);
 
     const tifUrls=stacItems.map(item=>{
