@@ -228,4 +228,49 @@ module.exports = (app, getDb, L, { upload, demProcessor, BACKUP_DIR, doBackup, g
       });
     }
   });
+
+  // ── Офлайн тайлы для HTML-экспорта ───────────────────────
+  app.post('/api/export-tiles', async (req, res) => {
+    const { bbox, minZoom, maxZoom, source } = req.body || {};
+    if (!bbox || minZoom == null || maxZoom == null)
+      return res.status(400).json({ error: 'bad_params' });
+
+    function lng2t(lng, z) { return Math.floor((lng + 180) / 360 * (1 << z)); }
+    function lat2t(lat, z) {
+      const r = lat * Math.PI / 180;
+      return Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * (1 << z));
+    }
+
+    const list = [];
+    for (let z = Math.max(0, minZoom); z <= Math.min(20, maxZoom); z++) {
+      const x1 = lng2t(bbox.minLng, z), x2 = lng2t(bbox.maxLng, z);
+      const y1 = lat2t(bbox.maxLat, z), y2 = lat2t(bbox.minLat, z);
+      for (let x = x1; x <= x2; x++)
+        for (let y = y1; y <= y2; y++)
+          list.push({ z, x, y });
+    }
+
+    const MAX = 500;
+    if (list.length > MAX)
+      return res.json({ error: 'too_many_tiles', count: list.length, max: MAX });
+
+    const isSat = source === 'sat';
+    const tiles = {};
+    const BATCH = 8;
+    for (let i = 0; i < list.length; i += BATCH) {
+      await Promise.all(list.slice(i, i + BATCH).map(async ({ z, x, y }) => {
+        const url = isSat
+          ? `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`
+          : `https://a.basemaps.cartocdn.com/rastertiles/voyager/${z}/${x}/${y}.png`;
+        try {
+          const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
+          if (!r.ok) return;
+          const buf = await r.arrayBuffer();
+          tiles[`${z}/${x}/${y}`] = Buffer.from(buf).toString('base64');
+        } catch (e) { /* skip failed tile */ }
+      }));
+    }
+
+    res.json({ tiles, count: Object.keys(tiles).length });
+  });
 };

@@ -6,7 +6,7 @@ var _htmlExDraw   = false;
 var _htmlExStart  = null;
 var _htmlExTmp    = null;
 var _htmlExSiteId = null;
-var _htmlExOpts   = {tile:'map', kmlIds:[], coordSys:'wgs', mobile:false};
+var _htmlExOpts   = {tile:'map', kmlIds:[], coordSys:'wgs', mobile:false, offline:false, offlineMaxZoom:15};
 
 // ── Открыть диалог выбора параметров ─────────────────────
 function openHtmlExportModal(siteId) {
@@ -58,6 +58,25 @@ function openHtmlExportModal(siteId) {
         </div>
         <div style="font-size:10px;color:var(--tx3);margin-top:4px">Телефон: карта на весь экран, крупные кнопки, таблица снизу</div>
       </div>
+      <div style="margin-bottom:14px">
+        <div style="font-size:11px;font-weight:700;color:var(--tx2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px">Офлайн подложка</div>
+        <label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1.5px solid var(--bd);border-radius:8px;cursor:pointer;font-size:11px;font-weight:600">
+          <input type="checkbox" id="hex-offline" onchange="_hexOfflineToggle(this.checked)">
+          <span>📥 Встроить тайлы в файл (работа без интернета)</span>
+        </label>
+        <div id="hex-offline-opts" style="display:none;margin-top:8px;padding:8px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--s2)">
+          <div style="display:flex;align-items:center;gap:8px;font-size:11px;margin-bottom:5px">
+            <label style="font-weight:600">Макс. зум:</label>
+            <select id="hex-offline-zoom" onchange="_hexUpdateTileCount()" style="font-size:11px;padding:3px 8px;border:1px solid var(--bd);border-radius:4px">
+              <option value="13">13 — обзор (~1:25000)</option>
+              <option value="14">14 — стандарт (~1:12000)</option>
+              <option value="15" selected>15 — детальный (~1:6000)</option>
+              <option value="16">16 — максимум (~1:3000)</option>
+            </select>
+          </div>
+          <div id="hex-tile-info" style="font-size:10px;color:var(--tx2)">Оценка по текущему виду карты</div>
+        </div>
+      </div>
       ${kmlBlock}
       <div>
         <div style="font-size:11px;font-weight:700;color:var(--tx2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px">Область</div>
@@ -84,13 +103,43 @@ function _htmlExToggleAllKml(check) {
   });
 }
 
+function _hexOfflineToggle(on) {
+  const opts = document.getElementById('hex-offline-opts');
+  if (opts) opts.style.display = on ? 'block' : 'none';
+  if (on) _hexUpdateTileCount();
+}
+function _hexTileCount(bbox, minZ, maxZ) {
+  function lng2t(l, z) { return Math.floor((l + 180) / 360 * (1 << z)); }
+  function lat2t(l, z) { const r = l * Math.PI / 180; return Math.floor((1 - Math.log(Math.tan(r) + 1/Math.cos(r)) / Math.PI) / 2 * (1 << z)); }
+  let n = 0;
+  for (let z = minZ; z <= maxZ; z++)
+    n += (lng2t(bbox.maxLng, z) - lng2t(bbox.minLng, z) + 1) * (lat2t(bbox.minLat, z) - lat2t(bbox.maxLat, z) + 1);
+  return n;
+}
+function _hexUpdateTileCount() {
+  const el = document.getElementById('hex-tile-info');
+  if (!el || !window.map) return;
+  const b = map.getBounds();
+  const bbox = {minLng: b.getWest(), maxLng: b.getEast(), minLat: b.getSouth(), maxLat: b.getNorth()};
+  const maxZ = parseInt(document.getElementById('hex-offline-zoom')?.value || '15');
+  const n = _hexTileCount(bbox, 10, maxZ);
+  const sz = Math.round(n * 35 / 1024); // rough estimate: ~35KB per tile base64
+  const ok = n <= 500;
+  el.style.color = ok ? 'var(--tx2)' : '#c81e1e';
+  el.textContent = `Оценка (текущий вид): ~${n} тайлов, ~${sz} МБ в файле${ok ? '' : ' — слишком много, уменьшите зум или область'}`;
+}
+
 function _htmlExApplyOpts() {
   const tileEl   = document.querySelector('input[name="htile"]:checked');
   const coordEl  = document.querySelector('input[name="hcoord"]:checked');
   const deviceEl = document.querySelector('input[name="hdevice"]:checked');
+  const offlineEl = document.getElementById('hex-offline');
+  const offlineZoomEl = document.getElementById('hex-offline-zoom');
   _htmlExOpts.tile     = tileEl   ? tileEl.value   : 'map';
   _htmlExOpts.coordSys = coordEl  ? coordEl.value  : 'wgs';
   _htmlExOpts.mobile   = deviceEl ? deviceEl.value === 'mobile' : false;
+  _htmlExOpts.offline  = offlineEl ? offlineEl.checked : false;
+  _htmlExOpts.offlineMaxZoom = offlineZoomEl ? parseInt(offlineZoomEl.value) : 15;
   _htmlExOpts.kmlIds = (layers||[])
     .filter(l => l.geojson && document.getElementById('kml-exp-'+l.id)?.checked)
     .map(l => l.id);
@@ -240,14 +289,41 @@ async function generateHtmlExport(siteId, bbox) {
     toast('В выбранной области нет данных','err'); return;
   }
 
+  // ── Офлайн тайлы ────────────────────────────────────────
+  let offlineTiles = null;
+  if (_htmlExOpts.offline) {
+    const maxZ = _htmlExOpts.offlineMaxZoom || 15;
+    const est = _hexTileCount(bbox, 10, maxZ);
+    if (est > 500) {
+      toast(`Слишком много тайлов (~${est}). Уменьшите область или зум.`,'err'); return;
+    }
+    toast(`📥 Загружаю тайлы подложки (~${est} шт.)...`,'ok');
+    try {
+      const tr = await fetch(`${API}/export-tiles`, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({bbox, minZoom:10, maxZoom:maxZ, source: _htmlExOpts.tile})
+      });
+      const td = await tr.json();
+      if (td.error === 'too_many_tiles') {
+        toast(`Слишком много тайлов (${td.count}). Уменьшите зум или область.`,'err'); return;
+      }
+      offlineTiles = td.tiles;
+      toast(`✅ Тайлы загружены: ${td.count} шт.`,'ok');
+    } catch(e) {
+      toast('Ошибка загрузки тайлов: '+e.message,'err'); return;
+    }
+  }
+
   const dateStr = new Date().toLocaleDateString('ru');
-  const html = _buildHtmlExport(s.name, bbox, pts, kmlData, SEM_LABEL, dateStr, _htmlExOpts, basePts);
+  const html = _buildHtmlExport(s.name, bbox, pts, kmlData, SEM_LABEL, dateStr, _htmlExOpts, basePts, offlineTiles);
   const a = document.createElement('a');
   a.href = 'data:text/html;charset=utf-8,'+encodeURIComponent(html);
   a.download = s.name.replace(/[\/\\:*?"<>|]/g,'_')
     +'_объёмы_'+new Date().toLocaleDateString('ru').replace(/\./g,'-')+'.html';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  toast('HTML сохранён: '+(pts.length)+' точек'+(kmlData.length?' + '+kmlData.length+' KML слоёв':''),'ok');
+  const szKb = Math.round(html.length / 1024);
+  toast(`HTML сохранён: ${pts.length} точек${offlineTiles?' + офлайн тайлы':''} · ${szKb} КБ`,'ok');
 }
 
 // Проверяем, есть ли хоть одна координата геометрии в bbox
@@ -277,8 +353,9 @@ function _exFmtCoord(lat, lng, sys) {
 }
 
 // ── Сборка HTML ───────────────────────────────────────────
-function _buildHtmlExport(siteName, bbox, pts, kmlData, SEM_LABEL, dateStr, opts, basePts) {
+function _buildHtmlExport(siteName, bbox, pts, kmlData, SEM_LABEL, dateStr, opts, basePts, offlineTiles) {
   basePts = basePts || [];
+  offlineTiles = offlineTiles || null;
   const he = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
   const sys = (opts && opts.coordSys) || 'wgs';
@@ -416,12 +493,30 @@ var PTS=${JSON.stringify(mapData)};
 var KML=${kmlJson};
 var BASES=${JSON.stringify(basePts)};
 var DEF_TILE='${defTile}';
+var OFFLINE_TILES=${offlineTiles ? JSON.stringify(offlineTiles) : 'null'};
 
 var map=L.map('map',{attributionControl:false});
 
+// Слой с поддержкой офлайн тайлов (при наличии) с фолбэком в интернет
+var OfflineLayer=L.TileLayer.extend({
+  createTile:function(coords,done){
+    var img=document.createElement('img');
+    var k=coords.z+'/'+coords.x+'/'+coords.y;
+    if(OFFLINE_TILES&&OFFLINE_TILES[k]){
+      img.src='data:image/png;base64,'+OFFLINE_TILES[k];
+      setTimeout(function(){done(null,img);},0);
+    }else{
+      img.crossOrigin='';
+      img.src=L.TileLayer.prototype.getTileUrl.call(this,coords);
+      img.onload=function(){done(null,img);};
+      img.onerror=function(e){done(e,img);};
+    }
+    return img;
+  }
+});
 var TILES={
-  map:L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:20}),
-  sat:L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:20})
+  map:new OfflineLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:20}),
+  sat:new OfflineLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:20})
 };
 var curTile=DEF_TILE;
 TILES[curTile].addTo(map);
