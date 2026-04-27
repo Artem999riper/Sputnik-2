@@ -250,7 +250,7 @@ module.exports = (app, getDb, L, { upload, demProcessor, BACKUP_DIR, doBackup, g
           list.push({ z, x, y });
     }
 
-    const MAX = 500;
+    const MAX = 1500;
     if (list.length > MAX)
       return res.json({ error: 'too_many_tiles', count: list.length, max: MAX });
 

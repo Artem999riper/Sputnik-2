@@ -336,10 +336,15 @@ function openFeatureSemantics(volId, featureIdx, geojsonStr, vpId){
   var sem=feature.properties.sem||{};
   var curType=sem.type||'';
   var curData=sem.data||{};
+  // KML snap name: pre-select borehole if name exists and no type yet
+  var kmlName=feature.properties.name||'';
+  if(kmlName&&!curType){curType='borehole';}
+  if(kmlName&&!curData.label){curData=Object.assign({label:kmlName},curData);}
 
   function _renderDataFields(type){
     if(type==='borehole'||type==='pit'){
       return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">'
+        +'<div class="fg s2"><label>Название / Номер</label><input id="sd-label" value="'+(curData.label||'')+'" placeholder="СКВ-1, ПТ-2/23..."></div>'
         +'<div class="fg"><label>Глубина (м)</label><input id="sd-depth" type="number" step="0.1" value="'+(curData.depth||'')+'" placeholder="0.0"></div>'
         +'<div class="fg"><label>Диаметр (мм)</label><input id="sd-diam" type="number" step="1" value="'+(curData.diam||'')+'" placeholder=""></div>'
         +'<div class="fg"><label>УГВ (м)</label><input id="sd-ugv" type="number" step="0.1" value="'+(curData.ugv||'')+'" placeholder="не встречен"></div>'
@@ -377,6 +382,7 @@ function openFeatureSemantics(volId, featureIdx, geojsonStr, vpId){
       var data={};
       if(selType==='borehole'||selType==='pit'){
         data={
+          label:document.getElementById('sd-label')?.value||'',
           depth:document.getElementById('sd-depth')?.value||'',
           diam: document.getElementById('sd-diam')?.value||'',
           ugv:  document.getElementById('sd-ugv')?.value||'',
@@ -505,7 +511,7 @@ function renderVolumesOnMap(vols){
 
         // Тултип
         var tipLines=['<b>'+esc(vol.name)+'</b>'];
-        if(semLabel) tipLines.push('<span style="color:'+ptColor+'">'+semLabel+'</span>');
+        if(semLabel) tipLines.push('<span style="color:'+ptColor+'">'+semLabel+(semData.label?' <b>'+esc(semData.label)+'</b>':'')+'</span>');
         if(featureIdx>=0) tipLines.push('<span style="color:var(--tx3);font-size:10px">точка #'+(featureIdx+1)+'</span>');
         if(vol.amount) tipLines.push(vol.amount+' '+esc(vol.unit));
         if(semType==='borehole'||semType==='pit'){

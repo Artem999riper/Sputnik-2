@@ -22,7 +22,7 @@ let currentTab='overview', filterSt='all';
 let mapMode='view', machinePlaceId=null, machinePlaceBaseId=null;
 let bMarkers={}, mMarkers={}, lGroups={}, volLayers={};
 let pgkTab='workers', pgkWorkers=[], pgkMachinery=[], pgkEquipment=[];
-let drawMode=null, drawPts=[], drawTmpLayer=null, drawVolId=null, drawSiteId=null, drawVolData=null;
+let drawMode=null, drawPts=[], drawPtNames=[], drawTmpLayer=null, drawVolId=null, drawSiteId=null, drawVolData=null;
 let volVisible={}; // per-volume show/hide
 let vpLayers={}; // per fact-entry map layers (key=progress id)
 let layerVisibility={}; // persists visible state across loadAll reloads

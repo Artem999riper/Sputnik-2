@@ -2008,27 +2008,31 @@ function addDrawPt(ll){
   if(!drawMode)return;
   const snap=_snapToKml(ll,20);
   drawPts.push([snap.lat,snap.lng]);
-  if(snap.snapped)toast('📌 Привязано к KML','ok');
+  drawPtNames.push(snap.snapped&&snap.name?snap.name:'');
+  if(snap.snapped)toast(snap.name?`📌 Привязано: ${snap.name}`:'📌 Привязано к KML','ok');
   updateDrawPreview();
 }
 function _snapToKml(ll,pxRadius){
-  if(!window.map||!lGroups)return{lat:ll.lat,lng:ll.lng,snapped:false};
+  if(!window.map||!lGroups)return{lat:ll.lat,lng:ll.lng,snapped:false,name:''};
   const T=map.latLngToContainerPoint(ll);
-  let bestPx=null,bestDist=pxRadius;
+  let bestPx=null,bestDist=pxRadius,bestName='';
   for(const layerId in lGroups){
     const g=lGroups[layerId];
     if(!g||!map.hasLayer(g))continue;
     g.eachLayer(sub=>{
       if(typeof sub.getLatLng==='function'){
-        // Точка — проверяем расстояние напрямую
         const p=map.latLngToContainerPoint(sub.getLatLng());
         const d=Math.hypot(p.x-T.x,p.y-T.y);
-        if(d<bestDist){bestDist=d;bestPx=p;}
+        if(d<bestDist){
+          bestDist=d;bestPx=p;
+          // Extract feature name from GeoJSON properties
+          const props=sub.feature&&sub.feature.properties;
+          bestName=(props&&(props.name||props.Name||props.label||props.Label||props.title||props.id||props.ID))||'';
+        }
       }else if(typeof sub.getLatLngs==='function'){
         const flat=sub.getLatLngs().flat(2);
         for(let i=0;i<flat.length;i++){
           const A=map.latLngToContainerPoint(flat[i]);
-          // Ближайшая точка на ребре [A,B]
           if(i<flat.length-1){
             const B=map.latLngToContainerPoint(flat[i+1]);
             const dx=B.x-A.x,dy=B.y-A.y,len2=dx*dx+dy*dy;
@@ -2036,19 +2040,18 @@ function _snapToKml(ll,pxRadius){
               const t=Math.max(0,Math.min(1,((T.x-A.x)*dx+(T.y-A.y)*dy)/len2));
               const cx=A.x+t*dx,cy=A.y+t*dy;
               const d=Math.hypot(cx-T.x,cy-T.y);
-              if(d<bestDist){bestDist=d;bestPx={x:cx,y:cy};}
+              if(d<bestDist){bestDist=d;bestPx={x:cx,y:cy};bestName='';}
             }
           }
-          // Также сама вершина
           const d=Math.hypot(A.x-T.x,A.y-T.y);
-          if(d<bestDist){bestDist=d;bestPx=A;}
+          if(d<bestDist){bestDist=d;bestPx=A;bestName='';}
         }
       }
     });
   }
-  if(!bestPx)return{lat:ll.lat,lng:ll.lng,snapped:false};
+  if(!bestPx)return{lat:ll.lat,lng:ll.lng,snapped:false,name:''};
   const snapped=map.containerPointToLatLng(bestPx);
-  return{lat:snapped.lat,lng:snapped.lng,snapped:true};
+  return{lat:snapped.lat,lng:snapped.lng,snapped:true,name:String(bestName)};
 }
 function updateDrawPreview(){
   if(drawTmpLayer){map.removeLayer(drawTmpLayer);drawTmpLayer=null;}
@@ -2068,7 +2071,7 @@ function undoDrawPt(){if(!drawPts.length){toast('Нет точек','err');retur
 async function finishDraw(){
   if(!drawMode||!drawPts.length){cancelDraw();return;}
   const pts=drawPts;let gj;
-  if(drawMode==='points'){gj={type:'FeatureCollection',features:pts.map(p=>({type:'Feature',geometry:{type:'Point',coordinates:[p[1],p[0]]},properties:{}}))}}
+  if(drawMode==='points'){gj={type:'FeatureCollection',features:pts.map((p,i)=>({type:'Feature',geometry:{type:'Point',coordinates:[p[1],p[0]]},properties:drawPtNames[i]?{name:drawPtNames[i]}:{}}))}}
   else if(drawMode==='polygon'){const cl=[...pts,pts[0]];gj={type:'Feature',geometry:{type:'Polygon',coordinates:[cl.map(p=>[p[1],p[0]])]},properties:{}};}
   else{gj={type:'Feature',geometry:{type:'LineString',coordinates:pts.map(p=>[p[1],p[0]])},properties:{}};}
   const sid=drawSiteId;
@@ -2120,7 +2123,7 @@ async function finishDraw(){
 function cancelDraw(){const sid=drawSiteId;toast('Рисование отменено','ok');endDraw();if(sid)selectSite(sid);}
 function endDraw(){
   if(drawTmpLayer){try{map.removeLayer(drawTmpLayer);}catch(e){}drawTmpLayer=null;}
-  drawMode=null;drawPts=[];drawVolId=null;drawSiteId=null;
+  drawMode=null;drawPts=[];drawPtNames=[];drawVolId=null;drawSiteId=null;
   document.getElementById('bnr').className='';map.getContainer().style.cursor='';
 }
 

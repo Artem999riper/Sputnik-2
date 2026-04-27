@@ -68,9 +68,10 @@ function openHtmlExportModal(siteId) {
           <div style="display:flex;align-items:center;gap:8px;font-size:11px;margin-bottom:5px">
             <label style="font-weight:600">Макс. зум:</label>
             <select id="hex-offline-zoom" onchange="_hexUpdateTileCount()" style="font-size:11px;padding:3px 8px;border:1px solid var(--bd);border-radius:4px">
-              <option value="13">13 — обзор (~1:25000)</option>
-              <option value="14">14 — стандарт (~1:12000)</option>
-              <option value="15" selected>15 — детальный (~1:6000)</option>
+              <option value="12">12 — обзор (~1:50000)</option>
+              <option value="13">13 — среднее (~1:25000)</option>
+              <option value="14" selected>14 — стандарт (~1:12000)</option>
+              <option value="15">15 — детальный (~1:6000)</option>
               <option value="16">16 — максимум (~1:3000)</option>
             </select>
           </div>
@@ -121,12 +122,17 @@ function _hexUpdateTileCount() {
   if (!el || !window.map) return;
   const b = map.getBounds();
   const bbox = {minLng: b.getWest(), maxLng: b.getEast(), minLat: b.getSouth(), maxLat: b.getNorth()};
-  const maxZ = parseInt(document.getElementById('hex-offline-zoom')?.value || '15');
+  const maxZ = parseInt(document.getElementById('hex-offline-zoom')?.value || '14');
   const n = _hexTileCount(bbox, 10, maxZ);
-  const sz = Math.round(n * 35 / 1024); // rough estimate: ~35KB per tile base64
-  const ok = n <= 500;
-  el.style.color = ok ? 'var(--tx2)' : '#c81e1e';
-  el.textContent = `Оценка (текущий вид): ~${n} тайлов, ~${sz} МБ в файле${ok ? '' : ' — слишком много, уменьшите зум или область'}`;
+  const sz = Math.round(n * 35 / 1024);
+  const ok = n <= 1500;
+  const warn = n > 600 && n <= 1500;
+  el.style.color = !ok ? '#c81e1e' : warn ? '#d97706' : 'var(--tx2)';
+  el.textContent = !ok
+    ? `~${n} тайлов — превышает лимит 1500. Уменьшите зум или область.`
+    : warn
+      ? `Оценка (текущий вид): ~${n} тайлов, ~${sz} МБ — файл будет большим`
+      : `Оценка (текущий вид): ~${n} тайлов, ~${sz} МБ`;
 }
 
 function _htmlExApplyOpts() {
@@ -294,8 +300,8 @@ async function generateHtmlExport(siteId, bbox) {
   if (_htmlExOpts.offline) {
     const maxZ = _htmlExOpts.offlineMaxZoom || 15;
     const est = _hexTileCount(bbox, 10, maxZ);
-    if (est > 500) {
-      toast(`Слишком много тайлов (~${est}). Уменьшите область или зум.`,'err'); return;
+    if (est > 1500) {
+      toast(`Слишком много тайлов (~${est}). Уменьшите область или зум (макс. 1500).`,'err'); return;
     }
     toast(`📥 Загружаю тайлы подложки (~${est} шт.)...`,'ok');
     try {
@@ -386,7 +392,7 @@ function _buildHtmlExport(siteName, bbox, pts, kmlData, SEM_LABEL, dateStr, opts
       <td>${he(p.volName)}</td>
       <td>${he(p.date||'—')}</td>
       <td>${cat}</td>
-      <td>${he(sl)}</td>
+      <td>${he(sl)}</td><td>${he(d.label||'')}</td>
       <td>${he(d.depth||'')}</td><td>${he(d.diam||'')}</td><td>${he(d.ugv||'')}</td>
       <td>${he(d.date||'')}</td><td>${he(d.exec||'')}</td>
       <td>${he(d.desc||d.note||'')}</td>
@@ -476,7 +482,7 @@ ${isMobile ? mobileCss : pcCss}
   <div class="tbl-wrap">
   <table>
     <thead><tr>
-      <th>#</th><th>Объём</th><th>Дата записи</th><th>Категория</th><th>Тип</th>
+      <th>#</th><th>Объём</th><th>Дата записи</th><th>Категория</th><th>Тип</th><th>Название/№</th>
       <th>Глубина (м)</th><th>Диаметр (мм)</th><th>УГВ (м)</th>
       <th>Дата</th><th>Исполнитель</th><th>Описание</th>
       <th>${colA}</th><th>${colB}</th>${showZone?'<th>Зона</th>':''}
@@ -579,7 +585,7 @@ PTS.forEach(function(p){
     +'<b>'+p.n+'</b>';
   if(p.dt) pop+='<br><span style="color:#64748b;font-size:10px">'+p.dt+'</span>';
   if(p.cat) pop+='<br><span style="color:#64748b;font-size:10px">'+p.cat+'</span>';
-  if(p.sl)  pop+='<br><span style="color:'+c+';font-weight:600">'+p.sl+'</span>';
+  if(p.sl)  pop+='<br><span style="color:'+c+';font-weight:600">'+p.sl+(d.label?' <b>'+d.label+'</b>':'')+'</span>';
   if(d.depth) pop+='<br>⬇ Глубина: <b>'+d.depth+' м</b>';
   if(d.diam)  pop+='<br>⌀ Диаметр: <b>'+d.diam+' мм</b>';
   if(d.ugv)   pop+='<br>💧 УГВ: <b>'+d.ugv+' м</b>';
