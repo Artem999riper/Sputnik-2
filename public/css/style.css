@@ -107,6 +107,9 @@ body.panel-open #gruz-page{right:var(--pw)}
 .lpft{padding:7px 9px}
 
 /* ── Panel ── */
+#mini-panel{position:fixed;top:50%;right:0;transform:translate(100%,-50%);width:240px;background:var(--s);border:1.5px solid var(--bd);border-right:none;border-radius:var(--rs) 0 0 var(--rs);box-shadow:var(--shm);z-index:1100;padding:12px 13px;display:flex;flex-direction:column;gap:7px;transition:transform .22s cubic-bezier(.4,0,.2,1)}
+#mini-panel.open{transform:translate(0,-50%)}
+.mph{display:flex;align-items:flex-start;justify-content:space-between;gap:6px}
 #panel{position:fixed;top:var(--th);right:0;bottom:0;width:var(--pw);background:var(--s);border-left:1px solid var(--bd);z-index:1000;display:flex;flex-direction:column;transform:translateX(100%);transition:transform .25s cubic-bezier(.4,0,.2,1)}
 #panel.open{transform:translateX(0)}
 .ph{padding:10px 12px 7px;border-bottom:1px solid var(--bd);flex-shrink:0}

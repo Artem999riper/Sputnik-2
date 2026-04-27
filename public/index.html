@@ -154,6 +154,19 @@
   </div>
 </div>
 
+<!-- Мини-панель: краткая карточка объекта -->
+<div id="mini-panel">
+  <div class="mph">
+    <div style="min-width:0">
+      <div id="mp-name" style="font-size:13px;font-weight:700;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+      <div id="mp-chips" style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px"></div>
+    </div>
+    <button class="ph-x" onclick="closeMiniPanel()" style="flex-shrink:0">✕</button>
+  </div>
+  <div id="mp-stats" style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--tx2)"></div>
+  <button class="btn bp bsm" style="width:100%;justify-content:center;margin-top:2px" onclick="openFullSitePanel()">📂 Открыть карточку</button>
+</div>
+
 <div id="panel">
   <div class="ph" id="phdr">
     <div class="ph-t"><h2 id="ph-title">—</h2><button class="ph-x" onclick="closePanel()">✕</button></div>

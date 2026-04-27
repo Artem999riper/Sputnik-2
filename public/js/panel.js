@@ -3,11 +3,43 @@ async function selectSite(id){
     const r=await fetch(`${API}/sites/${id}`);
     if(!r.ok)throw new Error('not found');
     currentObj=await r.json();currentType='site';activeSiteId=id;
-    openPanel(false);setupSiteTabs();renderTab();renderSidebar();
+    // Show mini panel first
+    _showMiniPanel();
+    renderSidebar();
     await repaintMap();
     renderVpLayers(currentObj.vol_progress||[]);
-    loadPhotos('site',id,'photos-site');
   }catch(e){toast('Ошибка загрузки объекта','err');}
+}
+
+function _showMiniPanel(){
+  if(!currentObj)return;
+  // Populate mini panel fields
+  document.getElementById('mp-name').textContent=currentObj.name||'';
+  const chips=[];
+  if(currentObj.status)chips.push(`<span class="chip"><span class="sdot ${currentObj.status==='active'?'sa':'sd'}" style="margin-right:2px"></span>${SSL[currentObj.status]||currentObj.status}</span>`);
+  if(currentObj.client)chips.push(`<span class="chip">🏢 ${esc(currentObj.client)}</span>`);
+  document.getElementById('mp-chips').innerHTML=chips.join('');
+  const bases_=(currentObj.bases||[]).length;
+  const workers_=(currentObj.bases||[]).reduce((a,b)=>a+(b.workers||[]).length,0);
+  const vols_=(currentObj.volumes||[]).length;
+  document.getElementById('mp-stats').innerHTML=
+    `<span>🏕 Баз: <b>${bases_}</b></span><span>👷 Персонал: <b>${workers_}</b></span><span>📦 Объёмы: <b>${vols_}</b></span>`;
+  document.getElementById('mini-panel').classList.add('open');
+}
+
+function openFullSitePanel(){
+  if(!currentObj||currentType!=='site')return;
+  document.getElementById('mini-panel').classList.remove('open');
+  openPanel(false);setupSiteTabs();renderTab();
+  loadPhotos('site',currentObj.id,'photos-site');
+}
+
+function closeMiniPanel(){
+  document.getElementById('mini-panel').classList.remove('open');
+  currentObj=null;currentType=null;activeSiteId=null;
+  clearVolumesFromMap();
+  renderSidebar();
+  try{repaintMap();}catch(e){}
 }
 async function selectBase(id){
   try{
@@ -36,9 +68,11 @@ function openPanel(isBase){
 }
 function closePanel(){
   document.getElementById('panel').classList.remove('open');
+  document.getElementById('mini-panel').classList.remove('open');
   document.body.classList.remove('panel-open');
   setTimeout(()=>map.invalidateSize({animate:false,pan:false}),260);
   currentObj=null;currentType=null;activeSiteId=null;
+  clearVolumesFromMap();
   renderSidebar();
   try{repaintMap();}catch(e){}
 }

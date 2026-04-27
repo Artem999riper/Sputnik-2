@@ -12,6 +12,7 @@ function initMap(){
   map.getPane('volPointsPane').style.zIndex=450;
   map.on('click',onMapClick);
   map.on('contextmenu',onMapRClick);
+  map.on('zoomend',_updateKmlLabelScale);
   document.addEventListener('click',e=>{if(!e.target.closest('#ctx'))hideCtx();});
   document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();cancelMode();clearRuler();}if((e.ctrlKey||e.metaKey)&&e.key==='z'){e.preventDefault();undoLast();}if(e.key==='z'&&!e.ctrlKey&&!e.metaKey&&rulerActive){rulerUndoLast();}});
   // Инициализация слоёв рельефа (terrain.js)

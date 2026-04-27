@@ -282,6 +282,15 @@ async function toggleLV(id,vis){
   renderLP();renderLayerGroups();setTimeout(bringVolumesToFront,50);
   try{if(kmlPanelOpen)renderKmlPanel();}catch(e){}
 }
+function _updateKmlLabelScale(){
+  if(!window.map)return;
+  const z=map.getZoom();
+  // < 9: скрыть, 9-11: мелкий шрифт, >= 12: нормальный
+  document.querySelectorAll('.leaflet-tooltip.mlbl').forEach(el=>{
+    if(z<9){el.style.display='none';}
+    else{el.style.display='';el.style.fontSize=z<12?'8px':'10px';}
+  });
+}
 function toggleLayerLabels(id){
   layerLabels[id]=!layerLabels[id];
   renderLP();

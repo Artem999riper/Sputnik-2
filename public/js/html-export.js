@@ -6,7 +6,7 @@ var _htmlExDraw   = false;
 var _htmlExStart  = null;
 var _htmlExTmp    = null;
 var _htmlExSiteId = null;
-var _htmlExOpts   = {tile:'map', kmlIds:[], coordSys:'wgs'};
+var _htmlExOpts   = {tile:'map', kmlIds:[], coordSys:'wgs', mobile:false};
 
 // ── Открыть диалог выбора параметров ─────────────────────
 function openHtmlExportModal(siteId) {
@@ -50,6 +50,14 @@ function openHtmlExportModal(siteId) {
           <label style="${radioStyle}"><input type="radio" name="hcoord" value="gsk"> ГСК-2011</label>
         </div>
       </div>
+      <div style="margin-bottom:14px">
+        <div style="font-size:11px;font-weight:700;color:var(--tx2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px">Устройство</div>
+        <div style="display:flex;gap:6px">
+          <label style="${radioStyle}"><input type="radio" name="hdevice" value="pc" checked> 🖥 ПК</label>
+          <label style="${radioStyle}"><input type="radio" name="hdevice" value="mobile"> 📱 Телефон</label>
+        </div>
+        <div style="font-size:10px;color:var(--tx3);margin-top:4px">Телефон: карта на весь экран, крупные кнопки, таблица снизу</div>
+      </div>
       ${kmlBlock}
       <div>
         <div style="font-size:11px;font-weight:700;color:var(--tx2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px">Область</div>
@@ -77,10 +85,12 @@ function _htmlExToggleAllKml(check) {
 }
 
 function _htmlExApplyOpts() {
-  const tileEl  = document.querySelector('input[name="htile"]:checked');
-  const coordEl = document.querySelector('input[name="hcoord"]:checked');
-  _htmlExOpts.tile     = tileEl  ? tileEl.value  : 'map';
-  _htmlExOpts.coordSys = coordEl ? coordEl.value : 'wgs';
+  const tileEl   = document.querySelector('input[name="htile"]:checked');
+  const coordEl  = document.querySelector('input[name="hcoord"]:checked');
+  const deviceEl = document.querySelector('input[name="hdevice"]:checked');
+  _htmlExOpts.tile     = tileEl   ? tileEl.value   : 'map';
+  _htmlExOpts.coordSys = coordEl  ? coordEl.value  : 'wgs';
+  _htmlExOpts.mobile   = deviceEl ? deviceEl.value === 'mobile' : false;
   _htmlExOpts.kmlIds = (layers||[])
     .filter(l => l.geojson && document.getElementById('kml-exp-'+l.id)?.checked)
     .map(l => l.id);
@@ -305,17 +315,9 @@ function _buildHtmlExport(siteName, bbox, pts, kmlData, SEM_LABEL, dateStr, opts
 
   const kmlJson = JSON.stringify(kmlData);
   const defTile = (opts&&opts.tile==='sat') ? 'sat' : 'map';
+  const isMobile = !!(opts && opts.mobile);
 
-  return `<!DOCTYPE html>
-<html lang="ru">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${he(siteName)} — Объёмы</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f1f5f9;color:#1e293b}
+  const pcCss = `
 #hdr{padding:14px 20px;background:#1e293b;color:#fff;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
 #hdr h1{font-size:17px;font-weight:700;letter-spacing:-.3px}
 #hdr .sub{font-size:11px;color:#94a3b8;margin-top:2px}
@@ -329,25 +331,62 @@ td{padding:5px 8px;border-bottom:1px solid #f1f5f9;vertical-align:top}
 tr:last-child td{border-bottom:none}
 tr:hover td{background:#f8fafc}
 #footer{padding:8px 20px;font-size:10px;color:#94a3b8;text-align:center}
-.tile-btn{position:absolute;top:80px;right:10px;z-index:1000;background:#fff;border:2px solid rgba(0,0,0,.2);border-radius:4px;width:34px;height:34px;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 5px rgba(0,0,0,.2)}
-@media print{#map{height:40vh}#footer{display:none}.tile-btn{display:none}}
+.map-btn{position:absolute;z-index:1000;background:#fff;border:2px solid rgba(0,0,0,.2);border-radius:4px;width:34px;height:34px;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 5px rgba(0,0,0,.2)}
+.tile-btn{top:80px;right:10px}
+.lbl-btn{top:124px;right:10px}
+@media print{#map{height:40vh}#footer{display:none}.map-btn{display:none}}
+.kml-lbl{background:rgba(255,255,255,.9);border:1px solid rgba(0,0,0,.15);border-radius:3px;padding:1px 4px;font-size:9px;font-weight:700;white-space:nowrap}`;
+
+  const mobileCss = `
+html,body{height:100%;overflow:hidden}
+#hdr{padding:10px 14px;background:#1e293b;color:#fff;display:flex;align-items:center;justify-content:space-between;gap:6px}
+#hdr h1{font-size:15px;font-weight:700;letter-spacing:-.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#hdr .sub{font-size:10px;color:#94a3b8;display:none}
+#map-wrap{flex:1;position:relative;overflow:hidden}
+#map{height:100%;width:100%}
+body{display:flex;flex-direction:column}
+#main{padding:10px 12px;overflow-y:auto;max-height:40vh;border-top:2px solid #e2e8f0;background:#f8fafc}
+#main h2{font-size:12px;font-weight:700;color:#334155;margin-bottom:8px}
+.tbl-wrap{overflow-x:auto;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.08);background:#fff}
+table{width:100%;border-collapse:collapse;font-size:10px}
+th{background:#334155;color:#fff;padding:6px;text-align:left;white-space:nowrap;font-weight:600}
+td{padding:4px 6px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+tr:last-child td{border-bottom:none}
+#footer{padding:6px 12px;font-size:9px;color:#94a3b8;text-align:center;background:#f8fafc}
+.map-btn{position:absolute;z-index:1000;background:#fff;border:2px solid rgba(0,0,0,.2);border-radius:6px;width:42px;height:42px;cursor:pointer;font-size:20px;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 5px rgba(0,0,0,.2)}
+.tile-btn{top:10px;right:10px}
+.lbl-btn{top:62px;right:10px}
+.kml-lbl{background:rgba(255,255,255,.9);border:1px solid rgba(0,0,0,.15);border-radius:3px;padding:1px 4px;font-size:9px;font-weight:700;white-space:nowrap}`;
+
+  return `<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>${he(siteName)} — Объёмы</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f1f5f9;color:#1e293b}
+${isMobile ? mobileCss : pcCss}
 </style>
 </head>
 <body>
 <div id="hdr">
-  <div>
+  <div style="min-width:0">
     <h1>${he(siteName)}</h1>
     <div class="sub">Экспорт ${dateStr} · ${pts.length} точек${kmlData.length?' · '+kmlData.length+' KML слоёв':''}</div>
   </div>
-  <div class="sub" style="text-align:right">
+  <div class="sub" style="text-align:right;flex-shrink:0">
     Координаты: <b>${sysLabel}</b><br>
     ${bbox.minLat.toFixed(5)}&thinsp;…&thinsp;${bbox.maxLat.toFixed(5)} с.ш.<br>
     ${bbox.minLng.toFixed(5)}&thinsp;…&thinsp;${bbox.maxLng.toFixed(5)} в.д.
   </div>
 </div>
-<div style="position:relative">
-  <div id="map"></div>
-  <button class="tile-btn" id="tile-toggle" title="Переключить подложку">🛰</button>
+<div id="${isMobile?'map-wrap':'map-wrap'}" style="position:relative${isMobile?';flex:1':''}">
+  <div id="map"${isMobile?'':' style="height:55vh;min-height:300px"'}></div>
+  <button class="map-btn tile-btn" id="tile-toggle" title="Переключить подложку">🛰</button>
+  ${kmlData.length ? `<button class="map-btn lbl-btn" id="lbl-toggle" title="Подписи KML">🏷</button>` : ''}
 </div>
 <div id="main">
   <h2>📍 Точки в области (${pts.length})</h2>
@@ -373,6 +412,10 @@ var DEF_TILE='${defTile}';
 
 var map=L.map('map',{attributionControl:false});
 
+// Pane для маркеров объёмов — поверх KML (overlayPane zIndex=400, markerPane=600)
+map.createPane('volPane');
+map.getPane('volPane').style.zIndex=550;
+
 var TILES={
   map:L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:20}),
   sat:L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:20})
@@ -380,7 +423,7 @@ var TILES={
 var curTile=DEF_TILE;
 TILES[curTile].addTo(map);
 
-// Кнопка переключения подложки
+// Переключение подложки
 var btn=document.getElementById('tile-toggle');
 btn.textContent=curTile==='map'?'🛰':'🗺';
 btn.onclick=function(){
@@ -390,7 +433,9 @@ btn.onclick=function(){
   btn.textContent=curTile==='map'?'🛰':'🗺';
 };
 
-// KML слои — рисуем ПЕРВЫМИ чтобы оказались под точками объёмов
+// KML слои
+var kmlTooltips=[];
+var lblVisible=true;
 KML.forEach(function(lyr){
   L.geoJSON({type:'FeatureCollection',features:lyr.features},{
     pointToLayer:function(feat,ll){
@@ -404,12 +449,24 @@ KML.forEach(function(lyr){
     },
     onEachFeature:function(feat,layer){
       var nm=feat.properties.name;
-      if(nm) layer.bindTooltip(nm,{direction:'top'});
+      if(nm){layer.bindTooltip(nm,{permanent:true,direction:'top',className:'kml-lbl'});kmlTooltips.push(layer);}
     }
   }).addTo(map);
 });
 
-// Точки объёмов — поверх KML
+// Кнопка переключения подписей KML
+var lblBtn=document.getElementById('lbl-toggle');
+if(lblBtn){
+  lblBtn.onclick=function(){
+    lblVisible=!lblVisible;
+    lblBtn.style.opacity=lblVisible?'1':'0.4';
+    kmlTooltips.forEach(function(l){
+      if(lblVisible) l.openTooltip(); else l.closeTooltip();
+    });
+  };
+}
+
+// Маркеры объёмов — в volPane поверх KML
 var allBounds=[];
 PTS.forEach(function(p){
   allBounds.push([p.lat,p.lng]);
@@ -434,7 +491,7 @@ PTS.forEach(function(p){
   var coordStr = (p.cz!=null) ? (p.ca+', '+p.cb+' (зона '+p.cz+')') : (p.ca+', '+p.cb);
   pop+='<br><span style="font-size:10px;color:#94a3b8;font-family:monospace">'+coordStr+'</span>';
   pop+='<\/div>';
-  L.marker([p.lat,p.lng],{icon:icon})
+  L.marker([p.lat,p.lng],{icon:icon,pane:'volPane'})
     .bindPopup(pop)
     .bindTooltip('#'+p.i+' '+p.n,{direction:'top',offset:[0,-9]})
     .addTo(map);

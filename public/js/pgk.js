@@ -2013,27 +2013,42 @@ function addDrawPt(ll){
 }
 function _snapToKml(ll,pxRadius){
   if(!window.map||!lGroups)return{lat:ll.lat,lng:ll.lng,snapped:false};
-  const target=map.latLngToContainerPoint(ll);
-  let best=null,bestDist=pxRadius;
+  const T=map.latLngToContainerPoint(ll);
+  let bestPx=null,bestDist=pxRadius;
   for(const layerId in lGroups){
     const g=lGroups[layerId];
     if(!g||!map.hasLayer(g))continue;
     g.eachLayer(sub=>{
       if(typeof sub.getLatLng==='function'){
+        // Точка — проверяем расстояние напрямую
         const p=map.latLngToContainerPoint(sub.getLatLng());
-        const d=Math.hypot(p.x-target.x,p.y-target.y);
-        if(d<bestDist){bestDist=d;best=sub.getLatLng();}
+        const d=Math.hypot(p.x-T.x,p.y-T.y);
+        if(d<bestDist){bestDist=d;bestPx=p;}
       }else if(typeof sub.getLatLngs==='function'){
         const flat=sub.getLatLngs().flat(2);
-        flat.forEach(latlng=>{
-          const p=map.latLngToContainerPoint(latlng);
-          const d=Math.hypot(p.x-target.x,p.y-target.y);
-          if(d<bestDist){bestDist=d;best=latlng;}
-        });
+        for(let i=0;i<flat.length;i++){
+          const A=map.latLngToContainerPoint(flat[i]);
+          // Ближайшая точка на ребре [A,B]
+          if(i<flat.length-1){
+            const B=map.latLngToContainerPoint(flat[i+1]);
+            const dx=B.x-A.x,dy=B.y-A.y,len2=dx*dx+dy*dy;
+            if(len2>0){
+              const t=Math.max(0,Math.min(1,((T.x-A.x)*dx+(T.y-A.y)*dy)/len2));
+              const cx=A.x+t*dx,cy=A.y+t*dy;
+              const d=Math.hypot(cx-T.x,cy-T.y);
+              if(d<bestDist){bestDist=d;bestPx={x:cx,y:cy};}
+            }
+          }
+          // Также сама вершина
+          const d=Math.hypot(A.x-T.x,A.y-T.y);
+          if(d<bestDist){bestDist=d;bestPx=A;}
+        }
       }
     });
   }
-  return best?{lat:best.lat,lng:best.lng,snapped:true}:{lat:ll.lat,lng:ll.lng,snapped:false};
+  if(!bestPx)return{lat:ll.lat,lng:ll.lng,snapped:false};
+  const snapped=map.containerPointToLatLng(bestPx);
+  return{lat:snapped.lat,lng:snapped.lng,snapped:true};
 }
 function updateDrawPreview(){
   if(drawTmpLayer){map.removeLayer(drawTmpLayer);drawTmpLayer=null;}
