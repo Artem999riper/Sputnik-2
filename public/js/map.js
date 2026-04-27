@@ -33,6 +33,7 @@ function onMapClick(e){
 }
 function onMapRClick(e){
   e.originalEvent.preventDefault();
+  if(vertexEditLayerId){_handleVertexEditRCM(e);return;}
   if(drawMode){
     showCtx(e.originalEvent.clientX,e.originalEvent.clientY,[
       {i:'✅',l:'Завершить рисование',f:finishDraw},

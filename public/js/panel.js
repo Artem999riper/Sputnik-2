@@ -410,6 +410,7 @@ function openFeatureSemantics(volId, featureIdx, geojsonStr, vpId){
 // ═══════════════════════════════════════════════════════════
 function clearVolumesFromMap(){
   Object.values(volLayers).forEach(g=>{try{map.removeLayer(g);}catch(e){}});volLayers={};
+  Object.values(vpLayers||{}).forEach(g=>{try{map.removeLayer(g);}catch(e){}});vpLayers={};
 }
 function renderVolumesOnMap(vols){
   clearVolumesFromMap();

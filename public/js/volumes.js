@@ -13,21 +13,21 @@ function openVolCommentModal(volId){
     }}]);
 }
 
-let vertexEditLayerId=null,vertexEditMarkers=[];
+let vertexEditLayerId=null, vertexEditMarkers=[];
+// State shared with RCM handler
+let _veCoords=null, _veGJ=null, _veId=null, _veIsVP=false, _veColor='#1a56db', _veUpdatePreview=null;
+
 function startVolVertexEdit(volId){
   const vol=(currentObj?.volumes||[]).find(v=>v.id===volId);
   if(!vol||!vol.geojson){toast('Сначала нарисуйте контур','err');return;}
   let gj;
   try{gj=JSON.parse(vol.geojson);}catch(e){toast('Ошибка чтения геометрии','err');return;}
-  // Stop any existing vertex edit
   stopVertexEdit();
   vertexEditLayerId=volId;
   switchView('map');
-  // Collect all coordinate points and make them draggable markers
   const coords=[];
   function extractCoords(geom){
     if(!geom)return;
-    // coords holds direct references into gj arrays so modifying coord[0]/coord[1] updates gj
     if(geom.type==='Point'){coords.push(geom.coordinates);}
     else if(geom.type==='LineString'){geom.coordinates.forEach(c=>coords.push(c));}
     else if(geom.type==='Polygon'){if(geom.coordinates[0])geom.coordinates[0].forEach(c=>coords.push(c));}
@@ -37,61 +37,64 @@ function startVolVertexEdit(volId){
   }
   extractCoords(gj);
   if(!coords.length){toast('Нет вершин для редактирования','err');return;}
-  // Draw draggable markers at each vertex
-  // Draw a live preview layer
   let previewLayer=null;
   function updatePreview(){
     if(previewLayer){try{map.removeLayer(previewLayer);}catch(e){}}
     try{previewLayer=L.geoJSON(gj,{
-      style:{color:vol?vol.color||'#1a56db':'#1a56db',weight:2,opacity:.7,fillOpacity:.15,dashArray:'4 3'},
+      style:{color:vol.color||'#1a56db',weight:2,opacity:.7,fillOpacity:.15,dashArray:'4 3'},
       pointToLayer:function(f,ll){return L.circleMarker(ll,{radius:5,fillColor:'#1a56db',color:'#fff',weight:1.5,fillOpacity:.8});}
     }).addTo(map);previewLayer.bringToFront&&previewLayer.bringToFront();}catch(e){}
   }
   updatePreview();
-  coords.forEach(function(c){
-    const mk=L.marker([c[1],c[0]],{
-      draggable:true,
-      icon:L.divIcon({className:'',iconSize:[14,14],iconAnchor:[7,7],
-        html:'<div style="width:14px;height:14px;background:#fff;border:2.5px solid #1a56db;border-radius:50%;cursor:move;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>'})
-    }).addTo(map);
-    mk.on('drag',function(){
-      const ll=mk.getLatLng();
-      c[0]=ll.lng; c[1]=ll.lat; // modify in-place — updates gj directly
-      updatePreview();
-    });
-    mk.on('dragend',function(){
-      const ll=mk.getLatLng();
-      c[0]=ll.lng; c[1]=ll.lat;
-      updatePreview();
-      saveVertexEdit(volId,gj);
-    });
-    mk.on('dblclick',function(){
-      // Remove this vertex on double-click
-      const idx=coords.indexOf(c);
-      if(idx>-1&&coords.length>3){coords.splice(idx,1);}
-      updatePreview();saveVertexEdit(volId,gj);
-      try{map.removeLayer(mk);}catch(e){}
-      const mi=vertexEditMarkers.indexOf(mk);
-      if(mi>-1)vertexEditMarkers.splice(mi,1);
-    });
-    vertexEditMarkers.push(mk);
-  });
+  _veCoords=coords; _veGJ=gj; _veId=volId; _veIsVP=false;
+  _veColor=vol.color||'#1a56db'; _veUpdatePreview=updatePreview;
+  coords.forEach(function(c){ _addVertexMarker(c, volId, gj, coords, updatePreview, false); });
   vertexEditMarkers.push({_isPreview:true,remove:function(){if(previewLayer){try{map.removeLayer(previewLayer);}catch(e){}}}});
-  toast('Тяните вершины для редактирования. Двойной клик — удалить вершину. ПКМ — завершить.','ok');
-  // Add ESC or RCM to stop
-  // Right-click to finish editing
-  map.once('contextmenu',function(e){
-    if(e.originalEvent)e.originalEvent.preventDefault();
-    // Save current geometry then stop editing
-    saveVertexEdit(volId,gj).then(function(){ stopVertexEdit(); });
-  });
+  toast('Тяните вершины. Двойной клик — удалить. ПКМ — меню действий.','ok');
 }
+
+function _addVertexMarker(c, volId, gj, coords, updatePreview, isVP){
+  const color=isVP?'#7c3aed':'#1a56db';
+  const mk=L.marker([c[1],c[0]],{
+    draggable:true,
+    icon:L.divIcon({className:'',iconSize:[14,14],iconAnchor:[7,7],
+      html:'<div style="width:14px;height:14px;background:#fff;border:2.5px solid '+color+';border-radius:50%;cursor:move;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>'})
+  }).addTo(map);
+  mk.on('drag',function(){const ll=mk.getLatLng();c[0]=ll.lng;c[1]=ll.lat;updatePreview();});
+  mk.on('dragend',function(){
+    const ll=mk.getLatLng();c[0]=ll.lng;c[1]=ll.lat;
+    updatePreview();
+    if(!isVP) saveVertexEdit(volId,gj);
+    else _saveVpVertex(volId,gj);
+  });
+  mk.on('dblclick',function(){
+    const idx=coords.indexOf(c);
+    if(idx>-1&&coords.length>3){coords.splice(idx,1);}
+    updatePreview();
+    if(!isVP) saveVertexEdit(volId,gj); else _saveVpVertex(volId,gj);
+    try{map.removeLayer(mk);}catch(e){}
+    const mi=vertexEditMarkers.indexOf(mk);
+    if(mi>-1)vertexEditMarkers.splice(mi,1);
+  });
+  // insert before preview sentinel if it exists
+  const pi=vertexEditMarkers.findIndex(m=>m._isPreview);
+  if(pi>-1)vertexEditMarkers.splice(pi,0,mk); else vertexEditMarkers.push(mk);
+  return mk;
+}
+
+async function _saveVpVertex(factId, gj){
+  const idx=(currentObj&&currentObj.vol_progress||[]).findIndex(x=>x.id===factId);
+  await fetch(`${API}/vol_progress/${factId}`,{method:'PUT',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({geojson:JSON.stringify(gj)})}).catch(()=>{});
+  if(idx>=0)currentObj.vol_progress[idx]={...currentObj.vol_progress[idx],geojson:JSON.stringify(gj)};
+  renderVpLayers(currentObj&&currentObj.vol_progress||[]);
+}
+
 async function saveVertexEdit(volId,gj){
   const vol=(currentObj?.volumes||[]).find(v=>v.id===volId);if(!vol)return;
   const r=await fetch(`${API}/volumes/${volId}`,{method:'PUT',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({...vol,geojson:JSON.stringify(gj)})});
   if(!r.ok){toast('Ошибка сохранения','err');return;}
-  // Update local copy so stopVertexEdit redraws correctly
   const geojsonStr=JSON.stringify(gj);
   const vIdx=(currentObj?.volumes||[]).findIndex(v=>v.id===volId);
   if(vIdx>=0)currentObj.volumes[vIdx]={...vol,geojson:geojsonStr};
@@ -103,7 +106,7 @@ function stopVertexEdit(){
   });
   vertexEditMarkers=[];
   vertexEditLayerId=null;
-  // Reload from server so updated geojson renders immediately
+  _veCoords=null; _veGJ=null; _veId=null; _veIsVP=false; _veUpdatePreview=null;
   if(currentObj){
     refreshCurrent().then(function(){
       renderVolumesOnMap(currentObj.volumes||[]);
@@ -111,6 +114,59 @@ function stopVertexEdit(){
       renderTab();
     });
   }
+}
+
+// Called from onMapRClick when vertexEditLayerId is set
+function _handleVertexEditRCM(e){
+  if(e.originalEvent)e.originalEvent.preventDefault();
+  const clickPx=map.latLngToContainerPoint(e.latlng);
+  const cx=e.originalEvent.clientX, cy=e.originalEvent.clientY;
+  showCtx(cx,cy,[
+    {i:'✅',l:'Закончить редактирование',f:function(){
+      if(_veIsVP){stopVertexEdit();}
+      else{saveVertexEdit(_veId,_veGJ).then(stopVertexEdit);}
+    }},
+    {i:'❌',l:'Удалить ближайшую вершину',f:function(){
+      if(!_veCoords||_veCoords.length<=3){toast('Минимум 3 вершины','err');return;}
+      let bestMk=null,bestDist=Infinity;
+      vertexEditMarkers.forEach(function(mk){
+        if(mk._isPreview||!mk.getLatLng)return;
+        const p=map.latLngToContainerPoint(mk.getLatLng());
+        const d=Math.hypot(p.x-clickPx.x,p.y-clickPx.y);
+        if(d<bestDist){bestDist=d;bestMk=mk;}
+      });
+      if(!bestMk)return;
+      const ll=bestMk.getLatLng();
+      const idx=_veCoords.findIndex(c=>Math.abs(c[0]-ll.lng)<1e-9&&Math.abs(c[1]-ll.lat)<1e-9);
+      if(idx>-1)_veCoords.splice(idx,1);
+      try{map.removeLayer(bestMk);}catch(ex){}
+      const mi=vertexEditMarkers.indexOf(bestMk);
+      if(mi>-1)vertexEditMarkers.splice(mi,1);
+      if(_veUpdatePreview)_veUpdatePreview();
+      if(_veIsVP)_saveVpVertex(_veId,_veGJ); else saveVertexEdit(_veId,_veGJ);
+    }},
+    {i:'➕',l:'Добавить вершину здесь',f:function(){
+      if(!_veCoords||!_veGJ)return;
+      const T=clickPx;
+      let bestSeg=-1,bestDist=Infinity;
+      for(let i=0;i<_veCoords.length;i++){
+        const j=(i+1)%_veCoords.length;
+        const A=map.latLngToContainerPoint([_veCoords[i][1],_veCoords[i][0]]);
+        const B=map.latLngToContainerPoint([_veCoords[j][1],_veCoords[j][0]]);
+        const dx=B.x-A.x,dy=B.y-A.y,len2=dx*dx+dy*dy;
+        if(len2===0)continue;
+        const t=Math.max(0,Math.min(1,((T.x-A.x)*dx+(T.y-A.y)*dy)/len2));
+        const d=Math.hypot(A.x+t*dx-T.x,A.y+t*dy-T.y);
+        if(d<bestDist){bestDist=d;bestSeg=i;}
+      }
+      if(bestSeg<0)return;
+      const newC=[e.latlng.lng,e.latlng.lat];
+      _veCoords.splice(bestSeg+1,0,newC);
+      _addVertexMarker(newC,_veId,_veGJ,_veCoords,_veUpdatePreview,_veIsVP);
+      if(_veUpdatePreview)_veUpdatePreview();
+      if(_veIsVP)_saveVpVertex(_veId,_veGJ); else saveVertexEdit(_veId,_veGJ);
+    }}
+  ]);
 }
 
 async function startVpVertexEdit(factId){
@@ -140,24 +196,11 @@ async function startVpVertexEdit(factId){
     }).addTo(map);}catch(e){}
   }
   updatePreview2();
-  coords.forEach(function(c){
-    const mk=L.marker([c[1],c[0]],{draggable:true,
-      icon:L.divIcon({className:'',iconSize:[14,14],iconAnchor:[7,7],
-        html:'<div style="width:14px;height:14px;background:#fff;border:2.5px solid #7c3aed;border-radius:50%;cursor:move;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>'})
-    }).addTo(map);
-    mk.on('drag',function(){const ll=mk.getLatLng();c[0]=ll.lng;c[1]=ll.lat;updatePreview2();});
-    mk.on('dragend',async function(){
-      const ll=mk.getLatLng();c[0]=ll.lng;c[1]=ll.lat;
-      await fetch(`${API}/vol_progress/${factId}`,{method:'PUT',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({geojson:JSON.stringify(gj)})});
-      updatePreview2();
-      renderVpLayers(currentObj&&currentObj.vol_progress||[]);
-    });
-    vertexEditMarkers.push(mk);
-  });
+  _veCoords=coords; _veGJ=gj; _veId=factId; _veIsVP=true;
+  _veColor='#7c3aed'; _veUpdatePreview=updatePreview2;
+  coords.forEach(function(c){ _addVertexMarker(c,factId,gj,coords,updatePreview2,true); });
   vertexEditMarkers.push({_isPreview:true,remove:function(){if(previewLayer){try{map.removeLayer(previewLayer);}catch(e){}}}});
-  toast('Редактируйте вершины факта. ПКМ — завершить.','ok');
-  map.once('contextmenu',stopVertexEdit);
+  toast('Тяните вершины факта. Двойной клик — удалить. ПКМ — меню действий.','ok');
 }
 
 // ═══════════════════════════════════════════════════════════

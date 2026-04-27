@@ -175,6 +175,11 @@ async function generateHtmlExport(siteId, bbox) {
     benchmark:'Марка', steel_angle:'Металлический уголок', other:'Другое'
   };
 
+  // ── Базы объекта в bbox ───────────────────────────────
+  const basePts = (s.bases||[])
+    .filter(b => b.lat && b.lng && inBbox(b.lat, b.lng))
+    .map(b => ({lat: b.lat, lng: b.lng, name: b.name||'База'}));
+
   const volMap = {};
   (s.volumes||[]).forEach(v => { volMap[v.id]=v; });
 
@@ -231,12 +236,12 @@ async function generateHtmlExport(siteId, bbox) {
     return {name:l.name, color:l.color||'#1a56db', dashArray:dashMap[l.line_dash]||null, features:feats};
   }).filter(Boolean);
 
-  if (pts.length===0 && kmlData.length===0) {
+  if (pts.length===0 && kmlData.length===0 && basePts.length===0) {
     toast('В выбранной области нет данных','err'); return;
   }
 
   const dateStr = new Date().toLocaleDateString('ru');
-  const html = _buildHtmlExport(s.name, bbox, pts, kmlData, SEM_LABEL, dateStr, _htmlExOpts);
+  const html = _buildHtmlExport(s.name, bbox, pts, kmlData, SEM_LABEL, dateStr, _htmlExOpts, basePts);
   const a = document.createElement('a');
   a.href = 'data:text/html;charset=utf-8,'+encodeURIComponent(html);
   a.download = s.name.replace(/[\/\\:*?"<>|]/g,'_')
@@ -272,7 +277,8 @@ function _exFmtCoord(lat, lng, sys) {
 }
 
 // ── Сборка HTML ───────────────────────────────────────────
-function _buildHtmlExport(siteName, bbox, pts, kmlData, SEM_LABEL, dateStr, opts) {
+function _buildHtmlExport(siteName, bbox, pts, kmlData, SEM_LABEL, dateStr, opts, basePts) {
+  basePts = basePts || [];
   const he = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
   const sys = (opts && opts.coordSys) || 'wgs';
@@ -338,21 +344,21 @@ tr:hover td{background:#f8fafc}
 .kml-lbl{background:rgba(255,255,255,.9);border:1px solid rgba(0,0,0,.15);border-radius:3px;padding:1px 4px;font-size:9px;font-weight:700;white-space:nowrap}`;
 
   const mobileCss = `
-html,body{height:100%;overflow:hidden}
-#hdr{padding:10px 14px;background:#1e293b;color:#fff;display:flex;align-items:center;justify-content:space-between;gap:6px}
+html,body{height:100%;margin:0;padding:0;overflow:hidden}
+body{display:flex;flex-direction:column}
+#hdr{padding:10px 14px;background:#1e293b;color:#fff;display:flex;align-items:center;justify-content:space-between;gap:6px;flex-shrink:0}
 #hdr h1{font-size:15px;font-weight:700;letter-spacing:-.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #hdr .sub{font-size:10px;color:#94a3b8;display:none}
-#map-wrap{flex:1;position:relative;overflow:hidden}
-#map{height:100%;width:100%}
-body{display:flex;flex-direction:column}
-#main{padding:10px 12px;overflow-y:auto;max-height:40vh;border-top:2px solid #e2e8f0;background:#f8fafc}
+#map-wrap{flex:1;position:relative;overflow:hidden;min-height:0}
+#map{position:absolute;top:0;left:0;right:0;bottom:0}
+#main{padding:10px 12px;overflow-y:auto;max-height:40vh;border-top:2px solid #e2e8f0;background:#f8fafc;flex-shrink:0}
 #main h2{font-size:12px;font-weight:700;color:#334155;margin-bottom:8px}
 .tbl-wrap{overflow-x:auto;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.08);background:#fff}
 table{width:100%;border-collapse:collapse;font-size:10px}
 th{background:#334155;color:#fff;padding:6px;text-align:left;white-space:nowrap;font-weight:600}
 td{padding:4px 6px;border-bottom:1px solid #f1f5f9;vertical-align:top}
 tr:last-child td{border-bottom:none}
-#footer{padding:6px 12px;font-size:9px;color:#94a3b8;text-align:center;background:#f8fafc}
+#footer{padding:6px 12px;font-size:9px;color:#94a3b8;text-align:center;background:#f8fafc;flex-shrink:0}
 .map-btn{position:absolute;z-index:1000;background:#fff;border:2px solid rgba(0,0,0,.2);border-radius:6px;width:42px;height:42px;cursor:pointer;font-size:20px;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 5px rgba(0,0,0,.2)}
 .tile-btn{top:10px;right:10px}
 .lbl-btn{top:62px;right:10px}
@@ -408,13 +414,10 @@ ${isMobile ? mobileCss : pcCss}
 (function(){
 var PTS=${JSON.stringify(mapData)};
 var KML=${kmlJson};
+var BASES=${JSON.stringify(basePts)};
 var DEF_TILE='${defTile}';
 
 var map=L.map('map',{attributionControl:false});
-
-// Pane для маркеров объёмов — поверх KML (overlayPane zIndex=400, markerPane=600)
-map.createPane('volPane');
-map.getPane('volPane').style.zIndex=550;
 
 var TILES={
   map:L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:20}),
@@ -491,10 +494,24 @@ PTS.forEach(function(p){
   var coordStr = (p.cz!=null) ? (p.ca+', '+p.cb+' (зона '+p.cz+')') : (p.ca+', '+p.cb);
   pop+='<br><span style="font-size:10px;color:#94a3b8;font-family:monospace">'+coordStr+'</span>';
   pop+='<\/div>';
-  L.marker([p.lat,p.lng],{icon:icon,pane:'volPane'})
+  L.marker([p.lat,p.lng],{icon:icon})
     .bindPopup(pop)
     .bindTooltip('#'+p.i+' '+p.n,{direction:'top',offset:[0,-9]})
     .addTo(map);
+});
+
+// Маркеры баз
+BASES.forEach(function(b){
+  var icon=L.divIcon({
+    className:'',
+    html:'<div style="display:flex;flex-direction:column;align-items:center;gap:2px">'
+      +'<div style="width:32px;height:32px;background:#7c3aed;border:3px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 2px 8px rgba(0,0,0,.4)">🏕</div>'
+      +'<div style="background:rgba(124,58,237,.85);color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;white-space:nowrap;max-width:110px;overflow:hidden;text-overflow:ellipsis;box-shadow:0 1px 4px rgba(0,0,0,.3)">'+b.name+'</div>'
+      +'</div>',
+    iconSize:[110,52],iconAnchor:[55,16]
+  });
+  allBounds.push([b.lat,b.lng]);
+  L.marker([b.lat,b.lng],{icon:icon}).bindPopup('<b>🏕 '+b.name+'</b>').addTo(map);
 });
 
 if(allBounds.length===1){map.setView(allBounds[0],16);}
@@ -506,6 +523,7 @@ else if(KML.length){
   });});
   if(kbounds.length) map.fitBounds(L.latLngBounds(kbounds),{padding:[30,30]});
 }
+setTimeout(function(){map.invalidateSize();},150);
 })();
 <\/script>
 </body>
