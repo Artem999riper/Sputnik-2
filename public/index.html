@@ -33,6 +33,7 @@
   <div class="tdv"></div>
   <button class="btn bb bsm" onclick="openAddBaseModal()">🏕 База</button>
   <button class="btn bp bsm" onclick="openAddSiteModal()">＋ Объект</button>
+  <button class="btn bs bsm" onclick="toggleSettingsPanel()" title="Настройки UI" id="settings-btn">⚙</button>
   <div class="tstats">
     <div class="tst a"><span class="sv" id="st-s">0</span><span class="sl">Объектов</span></div>
     <div class="tst b"><span class="sv" id="st-b">0</span><span class="sl">Баз</span></div>
@@ -43,6 +44,16 @@
   <button id="notif-btn" onclick="toggleNotifPanel()" title="Уведомления">
     🔔<span id="notif-count"></span>
   </button>
+</div>
+
+<!-- SETTINGS PANEL -->
+<div id="settings-panel">
+  <h4>Настройки интерфейса</h4>
+  <div class="sett-row">
+    <label>Подписи на карте</label>
+    <input type="range" id="mlbl-size-slider" min="9" max="22" value="13" oninput="applyMlblSize(this.value)">
+    <span id="mlbl-size-val">13</span>px
+  </div>
 </div>
 
 <!-- NOTIFICATION PANEL -->
@@ -164,7 +175,17 @@
     <button class="ph-x" onclick="closeMiniPanel()" style="flex-shrink:0">✕</button>
   </div>
   <div id="mp-stats" style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--tx2)"></div>
-  <button class="btn bp bsm" style="width:100%;justify-content:center;margin-top:2px" onclick="openFullSitePanel()">📂 Открыть карточку</button>
+  <div style="display:flex;gap:4px;margin-top:2px">
+    <button class="btn bp bsm" style="flex:1;justify-content:center" onclick="openFullSitePanel()">📂 Карточка</button>
+    <div style="position:relative">
+      <button class="btn bs bsm" id="mp-exp-btn" onclick="toggleMpExport()" title="Экспорт">📤 ▾</button>
+      <div id="mp-exp-drop">
+        <button onclick="exportExcel(activeSiteId);toggleMpExport()">📤 Excel</button>
+        <button onclick="openHtmlExportModal(activeSiteId);toggleMpExport()">📄 HTML</button>
+        <button onclick="exportVolumesDXF(activeSiteId);toggleMpExport()">📐 DXF</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div id="panel">
@@ -344,6 +365,7 @@
 <script src="js/ui.js"></script>
 <script src="js/dem.js"></script>
 <script src="js/html-export.js"></script>
+<script src="js/dxf-volumes.js"></script>
 
 <div id="name-gate" style="display:none">
   <div id="name-gate-box">

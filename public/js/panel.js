@@ -889,6 +889,18 @@ async function doMoveMachine(ll){
   if(currentObj)await refreshCurrent();else await loadAll();
 }
 
+function toggleMpExport(){
+  const d=document.getElementById('mp-exp-drop');
+  if(!d)return;
+  d.style.display=d.style.display==='block'?'none':'block';
+}
+document.addEventListener('click',e=>{
+  const drop=document.getElementById('mp-exp-drop');
+  if(drop&&drop.style.display==='block'&&!e.target.closest('#mp-exp-drop')&&!e.target.closest('#mp-exp-btn')){
+    drop.style.display='none';
+  }
+});
+
 // ═══════════════════════════════════════════════════════════
 // SITE PANEL TABS
 // ═══════════════════════════════════════════════════════════

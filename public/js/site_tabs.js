@@ -28,6 +28,7 @@ function tabSiteOv(pb){
     <button class="btn bs bsm" onclick="openAssignBasesModal('${s.id}')">🔗 Базы</button>
     <button class="btn bs bsm" onclick="exportExcel('${s.id}')">📤 Excel</button>
     <button class="btn bs bsm" onclick="openHtmlExportModal('${s.id}')">📄 HTML</button>
+    <button class="btn bs bsm" onclick="exportVolumesDXF('${s.id}')">📐 DXF</button>
     <button class="btn bd bsm" onclick="deleteSite('${s.id}')">🗑</button>
   </div>`;
 }
