@@ -104,9 +104,9 @@ function renderKmlPanel() {
   const list = document.getElementById('kml-panel-body');
   if (!list) return;
 
-  const ungrouped = layers.filter(l => !l.site_id && !l.group_id);
+  const ungrouped = layers.filter(l => !l.site_id && (!l.group_id || !kmGroups[l.group_id]));
   const grouped   = {};
-  layers.filter(l => !l.site_id && l.group_id).forEach(l => {
+  layers.filter(l => !l.site_id && l.group_id && kmGroups[l.group_id]).forEach(l => {
     if (!grouped[l.group_id]) grouped[l.group_id] = [];
     grouped[l.group_id].push(l);
   });
@@ -117,10 +117,12 @@ function renderKmlPanel() {
     if (!g) return;
     const gLayers = grouped[gid] || [];
     const allVis  = gLayers.length > 0 && gLayers.every(l => l.visible);
-    const boundSite = g.site_id ? sites.find(s=>s.id===g.site_id) : null;
-    const isActive  = !g.site_id || (currentObj && currentObj.id===g.site_id);
-    const siteBadge = boundSite
-      ? `<span title="Привязана к объекту: ${esc(boundSite.name)}" style="font-size:9px;background:${isActive?'var(--acc)':'var(--tx3)'};color:#fff;border-radius:10px;padding:1px 6px;flex-shrink:0;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🏗 ${esc(boundSite.name)}</span>`
+    const siteIds = g.site_ids || [];
+    const boundSites = siteIds.length ? sites.filter(s=>siteIds.includes(s.id)) : [];
+    const isActive  = !siteIds.length || (currentObj && siteIds.includes(currentObj.id));
+    const badgeLabel = boundSites.length===1 ? esc(boundSites[0].name) : boundSites.length+' объекта';
+    const siteBadge = boundSites.length
+      ? `<span title="Привязана к: ${boundSites.map(s=>esc(s.name)).join(', ')}" style="font-size:9px;background:${isActive?'var(--acc)':'var(--tx3)'};color:#fff;border-radius:10px;padding:1px 6px;flex-shrink:0;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🏗 ${badgeLabel}</span>`
       : '';
     html += `<div class="kml-group" data-gid="${gid}" style="${!isActive?'opacity:.45':''}">
       <div class="kml-group-hd" onclick="kmlToggleGroup('${gid}')">
@@ -213,33 +215,55 @@ function kmlCreateGroup() {
      {label:'Создать',cls:'bp',fn:()=>{
        const nm=v('f-gnm').trim();if(!nm)return;
        const gid='g_'+Date.now();
-       kmGroups[gid]={id:gid,name:nm,collapsed:false,site_id:''};
+       kmGroups[gid]={id:gid,name:nm,collapsed:false,site_ids:[]};
        kmGroupOrder.push(gid);
        saveKmGroups();closeModal();renderKmlPanel();
      }}]);
 }
-function saveKmGroups(){try{localStorage.setItem('kml_groups',JSON.stringify({groups:kmGroups,order:kmGroupOrder}));}catch(e){}}
-function loadKmGroups(){
-  try{const d=JSON.parse(localStorage.getItem('kml_groups')||'{}');kmGroups=d.groups||{};kmGroupOrder=d.order||[];}
-  catch(e){kmGroups={};kmGroupOrder=[];}
+async function saveKmGroups(){
+  Object.values(kmGroups).forEach(g=>{if(!g.site_ids)g.site_ids=g.site_id?[g.site_id]:[];});
+  try{
+    await fetch(`${API}/app-settings/kml_groups`,{method:'PUT',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({value:{groups:kmGroups,order:kmGroupOrder}})});
+  }catch(e){}
+  try{localStorage.setItem('kml_groups',JSON.stringify({groups:kmGroups,order:kmGroupOrder}));}catch(e){}
+}
+async function loadKmGroups(){
+  try{
+    const r=await fetch(`${API}/app-settings/kml_groups`);
+    const data=await r.json();
+    if(data.value&&data.value.groups){
+      kmGroups=data.value.groups;kmGroupOrder=data.value.order||[];
+      Object.values(kmGroups).forEach(g=>{if(!g.site_ids)g.site_ids=g.site_id?[g.site_id]:[];});
+      return;
+    }
+  }catch(e){}
+  try{
+    const d=JSON.parse(localStorage.getItem('kml_groups')||'{}');
+    kmGroups=d.groups||{};kmGroupOrder=d.order||[];
+    Object.values(kmGroups).forEach(g=>{if(!g.site_ids)g.site_ids=g.site_id?[g.site_id]:[];});
+    if(Object.keys(kmGroups).length>0)saveKmGroups();
+  }catch(e){kmGroups={};kmGroupOrder=[];}
 }
 
-// ── Привязать группу к объекту (сайту) ─────────────────────
+// ── Привязать группу к объектам (мультивыбор) ──────────────
 function kmlGroupBindSite(gid) {
   const g=kmGroups[gid];if(!g)return;
   if(!sites||!sites.length){toast('Нет объектов','err');return;}
-  const opts=sites.map(s=>`<option value="${escAttr(s.id)}" ${g.site_id===s.id?'selected':''}>${esc(s.name)}</option>`).join('');
-  showModal('🏗 Привязать группу к объекту',
-    `<div class="fg"><label>Объект</label><select id="f-gsite"><option value="">— Не выбрано —</option>${opts}</select></div>
-     <div style="font-size:11px;color:var(--tx3);margin-top:6px">Слои этой группы будут видны на карте только при выборе указанного объекта.</div>`,
+  const cur=g.site_ids||[];
+  const opts=sites.map(s=>
+    `<label style="display:flex;align-items:center;gap:8px;padding:4px 2px;cursor:pointer">
+      <input type="checkbox" value="${escAttr(s.id)}" ${cur.includes(s.id)?'checked':''}> ${esc(s.name)}
+    </label>`).join('');
+  showModal('🏗 Привязать группу к объектам',
+    `<div style="max-height:260px;overflow-y:auto;padding-right:4px">${opts}</div>
+     <div style="font-size:11px;color:var(--tx3);margin-top:8px">Слои этой группы видны только при выборе указанных объектов. Оставьте все снятыми — группа глобальная.</div>`,
     [{label:'Отмена',cls:'bs',fn:closeModal},
-     {label:'Привязать',cls:'bp',fn:()=>{
-       const sid=v('f-gsite');
-       if(!sid){toast('Выберите объект','err');return;}
-       g.site_id=sid;
+     {label:'Применить',cls:'bp',fn:()=>{
+       const checked=[...document.querySelectorAll('#mbd input[type=checkbox]:checked')].map(el=>el.value);
+       g.site_ids=checked;
        saveKmGroups();closeModal();renderKmlPanel();renderLayerGroups();
-       const sn=(sites.find(s=>s.id===sid)||{}).name||'';
-       toast('Группа привязана к: '+sn,'ok');
+       toast(checked.length?`Группа привязана к ${checked.length} объект${checked.length===1?'у':'ам'}`:'Привязка снята','ok');
      }}]);
 }
 
@@ -303,10 +327,11 @@ function kmlLayerCtx(ev, id) {
 // ── Контекстное меню группы ─────────────────────────────────
 function kmlGroupCtx(ev, gid) {
   const g=kmGroups[gid];if(!g)return;
-  const boundSite=g.site_id?sites.find(s=>s.id===g.site_id):null;
-  const bindItems=g.site_id
-    ?[{i:'🔓',l:'Отвязать от объекта'+(boundSite?' ('+esc(boundSite.name)+')':''),f:()=>{g.site_id='';saveKmGroups();renderKmlPanel();renderLayerGroups();}}]
-    :[{i:'🏗',l:'Привязать к объекту…',f:()=>kmlGroupBindSite(gid)}];
+  const siteIds=g.site_ids||[];
+  const bindItems=siteIds.length
+    ?[{i:'🔓',l:'Отвязать от объектов',f:()=>{g.site_ids=[];saveKmGroups();renderKmlPanel();renderLayerGroups();}},
+      {i:'🏗',l:'Изменить привязку…',f:()=>kmlGroupBindSite(gid)}]
+    :[{i:'🏗',l:'Привязать к объектам…',f:()=>kmlGroupBindSite(gid)}];
   showCtx(ev.clientX,ev.clientY,[
     {i:'📁',l:`<b>${esc(g.name)}</b>`,f:null},{sep:true},
     {i:'✏️',l:'Переименовать',f:()=>kmlRenameGroup(gid)},
@@ -613,8 +638,9 @@ function renderLayerGroupsWithSymbols() {
     // If the layer's group is bound to a specific site, only show when that site is active
     if (l.group_id) {
       const grp = kmGroups[l.group_id];
-      if (grp && grp.site_id) {
-        if (!currentObj || currentObj.id !== grp.site_id) return;
+      if (grp) {
+        const siteIds = grp.site_ids || (grp.site_id ? [grp.site_id] : []);
+        if (siteIds.length && (!currentObj || !siteIds.includes(currentObj.id))) return;
       }
     }
     try {
@@ -684,8 +710,8 @@ function renderLayerGroupsWithSymbols() {
 }
 
 // ── Инициализация ───────────────────────────────────────────
-function initKmlManager() {
-  loadKmGroups();
+async function initKmlManager() {
+  await loadKmGroups();
   window.renderLayerGroups = renderLayerGroupsWithSymbols;
   setTimeout(() => {
     try { renderLayerGroupsWithSymbols(); } catch(e) {}

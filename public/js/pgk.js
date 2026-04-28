@@ -2016,6 +2016,8 @@ function _snapToKml(ll,pxRadius){
   if(!window.map||!lGroups)return{lat:ll.lat,lng:ll.lng,snapped:false,name:''};
   const T=map.latLngToContainerPoint(ll);
   let bestPx=null,bestDist=pxRadius,bestName='';
+
+  // Pass 1: point features (highest priority)
   for(const layerId in lGroups){
     const g=lGroups[layerId];
     if(!g||!map.hasLayer(g))continue;
@@ -2025,33 +2027,56 @@ function _snapToKml(ll,pxRadius){
         const d=Math.hypot(p.x-T.x,p.y-T.y);
         if(d<bestDist){
           bestDist=d;bestPx=p;
-          // Extract feature name from GeoJSON properties
           const props=sub.feature&&sub.feature.properties;
           bestName=(props&&(props.name||props.Name||props.label||props.Label||props.title||props.id||props.ID))||'';
         }
-      }else if(typeof sub.getLatLngs==='function'){
+      }
+    });
+  }
+  if(bestPx){const s=map.containerPointToLatLng(bestPx);return{lat:s.lat,lng:s.lng,snapped:true,name:String(bestName)};}
+
+  // Pass 2: polygon/line vertices
+  bestDist=pxRadius;
+  for(const layerId in lGroups){
+    const g=lGroups[layerId];
+    if(!g||!map.hasLayer(g))continue;
+    g.eachLayer(sub=>{
+      if(typeof sub.getLatLngs==='function'){
         const flat=sub.getLatLngs().flat(2);
-        for(let i=0;i<flat.length;i++){
-          const A=map.latLngToContainerPoint(flat[i]);
-          if(i<flat.length-1){
-            const B=map.latLngToContainerPoint(flat[i+1]);
-            const dx=B.x-A.x,dy=B.y-A.y,len2=dx*dx+dy*dy;
-            if(len2>0){
-              const t=Math.max(0,Math.min(1,((T.x-A.x)*dx+(T.y-A.y)*dy)/len2));
-              const cx=A.x+t*dx,cy=A.y+t*dy;
-              const d=Math.hypot(cx-T.x,cy-T.y);
-              if(d<bestDist){bestDist=d;bestPx={x:cx,y:cy};bestName='';}
-            }
-          }
+        for(const latlng of flat){
+          const A=map.latLngToContainerPoint(latlng);
           const d=Math.hypot(A.x-T.x,A.y-T.y);
           if(d<bestDist){bestDist=d;bestPx=A;bestName='';}
         }
       }
     });
   }
-  if(!bestPx)return{lat:ll.lat,lng:ll.lng,snapped:false,name:''};
-  const snapped=map.containerPointToLatLng(bestPx);
-  return{lat:snapped.lat,lng:snapped.lng,snapped:true,name:String(bestName)};
+  if(bestPx){const s=map.containerPointToLatLng(bestPx);return{lat:s.lat,lng:s.lng,snapped:true,name:''};}
+
+  // Pass 3: closest point on line segments
+  bestDist=pxRadius;
+  for(const layerId in lGroups){
+    const g=lGroups[layerId];
+    if(!g||!map.hasLayer(g))continue;
+    g.eachLayer(sub=>{
+      if(typeof sub.getLatLngs==='function'){
+        const flat=sub.getLatLngs().flat(2);
+        for(let i=0;i<flat.length-1;i++){
+          const A=map.latLngToContainerPoint(flat[i]);
+          const B=map.latLngToContainerPoint(flat[i+1]);
+          const dx=B.x-A.x,dy=B.y-A.y,len2=dx*dx+dy*dy;
+          if(len2>0){
+            const t=Math.max(0,Math.min(1,((T.x-A.x)*dx+(T.y-A.y)*dy)/len2));
+            const cx=A.x+t*dx,cy=A.y+t*dy;
+            const d=Math.hypot(cx-T.x,cy-T.y);
+            if(d<bestDist){bestDist=d;bestPx={x:cx,y:cy};bestName='';}
+          }
+        }
+      }
+    });
+  }
+  if(bestPx){const s=map.containerPointToLatLng(bestPx);return{lat:s.lat,lng:s.lng,snapped:true,name:''};}
+  return{lat:ll.lat,lng:ll.lng,snapped:false,name:''};
 }
 function updateDrawPreview(){
   if(drawTmpLayer){map.removeLayer(drawTmpLayer);drawTmpLayer=null;}

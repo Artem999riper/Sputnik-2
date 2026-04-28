@@ -67,17 +67,30 @@ function smgGetPlanDays(vol){
   return res;
 }
 
+// All working (non-shift) plan dates across the full plan range as YYYY-MM-DD strings
+function smgAllPlanDateStrs(vol){
+  if(!vol.plan_start||!vol.plan_end)return smgGetPlanDays(vol).map(d=>smgDateStr(d));
+  const res=[];
+  const cur=new Date(vol.plan_start);
+  const end=new Date(vol.plan_end);
+  const cycleStart=new Date(vol.plan_start);
+  while(cur<=end){
+    const diff=Math.round((cur-cycleStart)/86400000);
+    if(diff%5!==4)res.push(cur.toISOString().split('T')[0]);
+    cur.setDate(cur.getDate()+1);
+  }
+  return res;
+}
+
 function smgCalcAutoPlan(vol){
   if(!vol.plan_start&&!vol.plan_end)return {};
-  const planDays=smgGetPlanDays(vol);
-  if(!planDays.length||!vol.amount)return {};
-  const perDay=Math.floor(vol.amount/planDays.length);
+  if(!vol.amount)return {};
+  const allDates=smgAllPlanDateStrs(vol);
+  if(!allDates.length)return {};
+  const perDay=vol.amount/allDates.length;
+  const pfx=smgYear+'-'+String(smgMonth+1).padStart(2,'0')+'-';
   const map={};
-  let dist=0;
-  planDays.forEach((d,i)=>{
-    if(i===planDays.length-1){map[smgDateStr(d)]=vol.amount-dist;}
-    else{map[smgDateStr(d)]=perDay;dist+=perDay;}
-  });
+  allDates.forEach(ds=>{if(ds.startsWith(pfx))map[ds]=Math.round(perDay);});
   return map;
 }
 
@@ -90,13 +103,29 @@ function smgGetManualPlan(prog,volId){
 }
 
 function smgEffectivePlan(vol,prog){
-  const auto=smgCalcAutoPlan(vol);
-  const manual=smgGetManualPlan(prog,vol.id);
+  // Collect ALL manual plan entries across all months
+  const allManual={};
+  (prog||[]).filter(p=>p.volume_id===vol.id&&p.row_type==='plan').forEach(p=>{
+    allManual[p.work_date]=(allManual[p.work_date]||0)+(+p.completed||0);
+  });
   const result={};
   const days=smgDaysInMonth();
-  for(let d=1;d<=days;d++){
-    const ds=smgDateStr(d);
-    result[ds]=Object.prototype.hasOwnProperty.call(manual,ds)?manual[ds]:(auto[ds]||0);
+  if(Object.keys(allManual).length>0){
+    // Redistribute remaining amount across non-manual auto days
+    const allDates=smgAllPlanDateStrs(vol);
+    const autoDatesSet=new Set(allDates.filter(ds=>!Object.prototype.hasOwnProperty.call(allManual,ds)));
+    const manualTotal=Object.values(allManual).reduce((a,v)=>a+v,0);
+    const autoAmount=Math.max(0,vol.amount-manualTotal);
+    const perAutoDay=autoDatesSet.size>0?autoAmount/autoDatesSet.size:0;
+    for(let d=1;d<=days;d++){
+      const ds=smgDateStr(d);
+      if(Object.prototype.hasOwnProperty.call(allManual,ds))result[ds]=allManual[ds];
+      else if(autoDatesSet.has(ds))result[ds]=Math.round(perAutoDay);
+      else result[ds]=0;
+    }
+  }else{
+    const auto=smgCalcAutoPlan(vol);
+    for(let d=1;d<=days;d++){const ds=smgDateStr(d);result[ds]=auto[ds]||0;}
   }
   return result;
 }

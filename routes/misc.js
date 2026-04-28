@@ -8,6 +8,20 @@ const { trashAndDelete } = require('./realtime');
 module.exports = (app, getDb, L, { upload, demProcessor, BACKUP_DIR, doBackup, getBackupSettings, setBackupSettings, performAutoBackup }) => {
   const db = () => getDb();
 
+  // ── APP SETTINGS (shared key-value store) ──────────────────
+  app.get('/api/app-settings/:key', wrap((req, res) => {
+    const row = get(db(), 'SELECT value FROM app_settings WHERE key=?', [req.params.key]);
+    if (!row) return res.json({ value: null });
+    try { res.json({ value: JSON.parse(row.value) }); } catch(e) { res.json({ value: row.value }); }
+  }));
+
+  app.put('/api/app-settings/:key', wrap((req, res) => {
+    const { value } = req.body;
+    const str = typeof value === 'string' ? value : JSON.stringify(value);
+    run(db(), 'INSERT OR REPLACE INTO app_settings(key,value)VALUES(?,?)', [req.params.key, str]);
+    res.json({ ok: true });
+  }));
+
   // ── KML LAYERS (global) ────────────────────────────────────
   app.get('/api/layers', wrap((req, res) =>
     res.json(all(db(), 'SELECT * FROM kml_layers ORDER BY created_at DESC'))
