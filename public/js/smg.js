@@ -557,7 +557,7 @@ async function smgCommitEdit(){
   const prog=smgSiteData?.vol_progress||[];
   const existing=prog.filter(p=>p.volume_id===volId&&p.work_date===ds&&(p.row_type||'fact')===row);
   for(const p of existing)await fetch(API+'/vol_progress/'+p.id,{method:'DELETE'});
-  if(!isNaN(val)&&val>0){
+  if(!isNaN(val)&&inp.value.trim()!==''){
     await fetch(API+'/volumes/'+volId+'/progress',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({site_id:smgSiteId,work_date:ds,completed:val,row_type:row,user_name:un()})});
   }
@@ -750,13 +750,17 @@ function smgPlanCellCtxMenu(ev,volId,day){
   const ds=smgDateStr(day);
   const manualPlan=smgGetManualPlan(prog,volId);
   const isManual=Object.prototype.hasOwnProperty.call(manualPlan,ds);
+  const _resetDay=async()=>{
+    const ex=prog.filter(p=>p.volume_id===volId&&p.row_type==='plan'&&p.work_date===ds);
+    for(const p of ex)await fetch(API+'/vol_progress/'+p.id,{method:'DELETE'});
+    await smgLoadAndRender();toast('Сброшено на авто','ok');
+  };
   showCtx(ev.clientX,ev.clientY,[
     {i:'✏️',l:'Редактировать план',f:()=>smgPlanCellClick(volId,ds)},
-    ...(isManual?[{i:'↺',l:'Сбросить на авто',f:async()=>{
-      const ex=prog.filter(p=>p.volume_id===volId&&p.row_type==='plan'&&p.work_date===ds);
-      for(const p of ex)await fetch(API+'/vol_progress/'+p.id,{method:'DELETE'});
-      await smgLoadAndRender();toast('Сброшено на авто','ok');
-    }}]:[]),
+    ...(isManual?[
+      {i:'↺',l:'Сбросить на авто',f:_resetDay},
+      {i:'🗑',l:'Удалить вручную',f:_resetDay},
+    ]:[]),
     {sep:true},
     {i:'↺',l:'Сбросить весь месяц на авто',f:()=>smgResetPlanMonth(volId)},
   ]);

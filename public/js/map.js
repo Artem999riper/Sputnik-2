@@ -261,5 +261,33 @@ function updateStats(){
 }
 
 // ═══════════════════════════════════════════════════════════
+// SETTINGS PANEL
+// ═══════════════════════════════════════════════════════════
+function applyMlblSize(px){
+  px=parseInt(px,10);
+  document.documentElement.style.setProperty('--mlbl-fs',px+'px');
+  const val=document.getElementById('mlbl-size-val');
+  if(val)val.textContent=px;
+  localStorage.setItem('mlbl_size',px);
+}
+function toggleSettingsPanel(){
+  const p=document.getElementById('settings-panel');
+  if(!p)return;
+  p.style.display=p.style.display==='block'?'none':'block';
+}
+(function _initMlblSize(){
+  const saved=localStorage.getItem('mlbl_size')||'13';
+  applyMlblSize(saved);
+  const slider=document.getElementById('mlbl-size-slider');
+  if(slider)slider.value=saved;
+  document.addEventListener('click',e=>{
+    const panel=document.getElementById('settings-panel');
+    if(panel&&panel.style.display==='block'&&!e.target.closest('#settings-panel')&&!e.target.closest('#settings-btn')){
+      panel.style.display='none';
+    }
+  });
+})();
+
+// ═══════════════════════════════════════════════════════════
 // SIDEBAR
 // ═══════════════════════════════════════════════════════════

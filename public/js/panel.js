@@ -842,6 +842,18 @@ async function doMoveMachine(ll){
 }
 
 async function toggleLVis(id,vis){const l=layers.find(x=>x.id===id);if(!l)return;await fetch(`${API}/layers/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:l.name,color:l.color,visible:vis})});l.visible=vis;renderLP();renderLayerGroups();}
+function toggleMpExport(){
+  const d=document.getElementById('mp-exp-drop');
+  if(!d)return;
+  d.style.display=d.style.display==='block'?'none':'block';
+}
+document.addEventListener('click',e=>{
+  const drop=document.getElementById('mp-exp-drop');
+  if(drop&&drop.style.display==='block'&&!e.target.closest('#mp-exp-drop')&&!e.target.closest('#mp-exp-btn')){
+    drop.style.display='none';
+  }
+});
+
 // ═══════════════════════════════════════════════════════════
 // SITE PANEL TABS
 // ═══════════════════════════════════════════════════════════
