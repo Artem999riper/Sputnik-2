@@ -20,13 +20,19 @@ function _buildDxfLabel(sem, idx){
   const type = sem.type || '';
   const data = sem.data || {};
   const PREFIX = {borehole:'СКВ', pit:'Ш', ggs:'ГГС', ogs:'ОГС', repere:'Рп', benchmark:'Мк', steel_angle:'Уг', other:'Т'};
-  let name = data.label || data.note || (PREFIX[type] || 'Т') + '-' + idx;
+  const hasData = type==='borehole' || type==='pit';
+  // Для скважин/шурфов: name=label, desc=data.desc; для остальных: name=префикс, desc=note
+  const name = hasData ? (data.label || (PREFIX[type]||'Т')+'-'+idx) : (PREFIX[type]||'Т')+'-'+idx;
+  const desc = hasData ? (data.desc||'').trim() : (data.note||'').trim();
   const attrs = [];
   if (data.depth) attrs.push('H=' + data.depth);
   if (data.diam)  attrs.push('d=' + data.diam);
   if (data.ugv)   attrs.push('УГВ=' + data.ugv);
   if (data.exec)  attrs.push(data.exec);
-  return attrs.length ? name + ' (' + attrs.join(' ') + ')' : name;
+  let label = attrs.length ? name + ' (' + attrs.join(' ') + ')' : name;
+  // Описание разреза — всегда добавляем; пробел если поле пустое
+  label += ' ' + (desc || ' ');
+  return label;
 }
 
 function buildVolumesDXF({points, coordSys, siteName}){
@@ -72,7 +78,7 @@ function buildVolumesDXF({points, coordSys, siteName}){
     s += _dxfG(20, (x + 0.5).toFixed(3));
     s += _dxfG(30, '0.0');
     s += _dxfG(40, '1.5');
-    s += _dxfG(1, txt);
+    s += _dxfG(1, txt || ' ');
   }
 
   // Comment with metadata
