@@ -20,9 +20,7 @@ public/photos/
 logs/
 
 # Ruflo / Claude flow runtime
-.claude-flow/daemon.pid
-.claude-flow/logs/
-.claude-flow/sessions/
+.claude-flow/
 .swarm/
 agentdb.rvf
 agentdb.rvf.lock
