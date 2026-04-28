@@ -1119,20 +1119,47 @@ function smgExportExcel(){
   const today=new Date().toISOString().split('T')[0];
   const todayStr=today.replace(/-/g,'.');
 
-  // Header row: №П/П + Вид работ + Строка + Ед. + Объём + дни + итог + % + Δ + Акт
+  // Колонки: A=№П/П, B=Вид работ, C=Строка, D=Ед., E=Объём, F..=дни, потом итог, %, Δ, Акт
+  const TOTAL_COLS = 5 + days + 4;   // A-E + days + (План/Факт, %, Δ, Акт)
+
+  // Build header row labels
   const hdr=['№П/П','Вид работ','Строка','Ед.','Объём'];
-  for(let d=1;d<=days;d++){const dt=new Date(smgYear,smgMonth,d);hdr.push(d+' '+dows[dt.getDay()]+(smgIsShiftOff(d)?'(⊘)':''));}
+  for(let d=1;d<=days;d++){const dt=new Date(smgYear,smgMonth,d);hdr.push(d+' '+dows[dt.getDay()]);}
   hdr.push('План/Факт','% Выполнения','Δ к плану на текущую дату','Актировано');
 
-  const aoa=[['СМГ — '+site.name+' — '+monthName+' '+todayStr],[],hdr];
+  // Build AOA rows
+  const aoa=[
+    ['СМГ — '+site.name+' — '+monthName+' '+todayStr],   // row 1: title
+    [],                                                  // row 2: spacer
+    hdr,                                                 // row 3: headers
+  ];
+
   const cats=['geology','geodesy'];
   const catLabels={geology:'ГЕОЛОГИЯ',geodesy:'ГЕОДЕЗИЯ'};
+  const catFills={geology:'00B050', geodesy:'00B0F0'};
 
-  let seqNo=0;
+  // Track special rows / merges as we build
+  const merges=[];      // {s:{r,c}, e:{r,c}}
+  const groupRows=[];   // rows to color-fill across width
+  const planRows=[];    // [{r, daysCells:[colIdx...]} ] — for green fill on filled days
+  const factRows=[];    // similar
+
+  // Title row
+  merges.push({s:{r:0,c:0}, e:{r:0,c:TOTAL_COLS-1}});
+
+  let curRow = 3;       // 0-based; rows 0,1,2 already used (title, blank, header)
+
   cats.forEach(cat=>{
     const catVols=vols.filter(v=>v.category===cat);
-    if(!catVols.length)return;
+    if(!catVols.length) return;
+
+    // Group header row
     aoa.push([catLabels[cat]]);
+    groupRows.push({r:curRow, fill:catFills[cat]});
+    merges.push({s:{r:curRow, c:0}, e:{r:curRow, c:TOTAL_COLS-1}});
+    curRow++;
+
+    let seqNo = 0;
     catVols.forEach(vol=>{
       seqNo++;
       const factEntries=prog.filter(p=>p.volume_id===vol.id&&p.row_type!=='plan');
@@ -1148,32 +1175,171 @@ function smgExportExcel(){
       let planTotal=0;
       for(let d=1;d<=days;d++)planTotal+=(ep[smgDateStr(d)]||0);
 
-      // ПЛАН: [№, название, 'ПЛАН', ед, объём, ...дни, сумма_плана, %, Δ, '']
-      const planRow=[seqNo,vol.name,'ПЛАН',vol.unit,vol.amount];
+      // ПЛАН row
+      const planRow=[seqNo, vol.name, 'ПЛАН', vol.unit, vol.amount];
       for(let d=1;d<=days;d++)planRow.push(ep[smgDateStr(d)]||'');
       planRow.push(planTotal, pct+'%', (delta>0?'+':'')+delta, '');
       aoa.push(planRow);
+      const planRowIdx=curRow;
+      planRows.push(planRowIdx);
+      curRow++;
 
-      // ФАКТ: ['', '', 'ФАКТ', '', '', ...дни, итог_факт, '', '', кол-во_акт]
+      // ФАКТ row
       const factRow=['','','ФАКТ','',''];
       for(let d=1;d<=days;d++)factRow.push(factMap[smgDateStr(d)]||'');
       factRow.push(totalFact, '', '', actCount||'');
       aoa.push(factRow);
+      const factRowIdx=curRow;
+      factRows.push(factRowIdx);
+      curRow++;
+
+      // Merge across plan+fact rows: A=№, B=name, D=unit, E=amount, AK=%, AL=Δ
+      [0, 1, 3, 4, 5+days+1, 5+days+2].forEach(c=>{
+        merges.push({s:{r:planRowIdx,c}, e:{r:factRowIdx,c}});
+      });
     });
   });
 
   const ws=XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols']=[{wch:5},{wch:28},{wch:6},{wch:6},{wch:8}];
+
+  // Column widths
+  ws['!cols']=[{wch:6},{wch:30},{wch:7},{wch:7},{wch:9}];
   for(let d=1;d<=days;d++)ws['!cols'].push({wch:5});
-  ws['!cols'].push({wch:10},{wch:13},{wch:22},{wch:10});
+  ws['!cols'].push({wch:9},{wch:11},{wch:14},{wch:11});
+
+  // Row heights
+  ws['!rows']=[];
+  ws['!rows'][0]={hpx:28};   // title
+  ws['!rows'][2]={hpx:36};   // header
+
+  ws['!merges']=merges;
+
+  // ── Styling helpers
+  const border = {
+    top:    {style:'thin', color:{rgb:'808080'}},
+    bottom: {style:'thin', color:{rgb:'808080'}},
+    left:   {style:'thin', color:{rgb:'808080'}},
+    right:  {style:'thin', color:{rgb:'808080'}},
+  };
+  const baseAlign = {horizontal:'center', vertical:'center', wrapText:true};
+
+  function setStyle(cellRef, style){
+    if(!ws[cellRef]) ws[cellRef] = {t:'s', v:''};
+    ws[cellRef].s = style;
+  }
+  function colLetter(c){
+    let s='', n=c;
+    do{ s = String.fromCharCode(65 + n%26) + s; n = Math.floor(n/26)-1; } while(n>=0);
+    return s;
+  }
+  function ref(r,c){ return colLetter(c) + (r+1); }
+
+  // Title: bold, centered, light-gray fill
+  setStyle(ref(0,0), {
+    font:{bold:true, sz:14},
+    alignment:{horizontal:'center', vertical:'center'},
+    fill:{patternType:'solid', fgColor:{rgb:'D9E1F2'}},
+    border
+  });
+
+  // Header row (row 3 = index 2): bold, centered, gray fill, border, wrap
+  for(let c=0; c<TOTAL_COLS; c++){
+    setStyle(ref(2,c), {
+      font:{bold:true, sz:11},
+      alignment:baseAlign,
+      fill:{patternType:'solid', fgColor:{rgb:'BDD7EE'}},
+      border
+    });
+  }
+
+  // Group header rows (ГЕОЛОГИЯ / ГЕОДЕЗИЯ) — color fill across full width
+  groupRows.forEach(g=>{
+    for(let c=0; c<TOTAL_COLS; c++){
+      setStyle(ref(g.r,c), {
+        font:{bold:true, sz:12, color:{rgb:'FFFFFF'}},
+        alignment:{horizontal:'center', vertical:'center'},
+        fill:{patternType:'solid', fgColor:{rgb:g.fill}},
+        border
+      });
+    }
+  });
+
+  // Plan rows: light blue tint; Fact rows: white. Both with border + center align.
+  const planFill = {patternType:'solid', fgColor:{rgb:'DDEBF7'}};
+  const factFill = {patternType:'solid', fgColor:{rgb:'FFFFFF'}};
+  planRows.forEach(r=>{
+    for(let c=0; c<TOTAL_COLS; c++){
+      setStyle(ref(r,c), {
+        font:{sz:11, bold:c<5||c>=5+days},
+        alignment:baseAlign,
+        fill:planFill,
+        border
+      });
+    }
+  });
+  factRows.forEach(r=>{
+    for(let c=0; c<TOTAL_COLS; c++){
+      setStyle(ref(r,c), {
+        font:{sz:11, bold:c<5||c>=5+days},
+        alignment:baseAlign,
+        fill:factFill,
+        border
+      });
+    }
+  });
+
+  // Highlight today's day-column header
+  const todayDay = (new Date().getFullYear()===smgYear && new Date().getMonth()===smgMonth) ? new Date().getDate() : -1;
+  if(todayDay>0 && todayDay<=days){
+    const c = 5 + (todayDay-1);
+    setStyle(ref(2,c), {
+      font:{bold:true, sz:11, color:{rgb:'FFFFFF'}},
+      alignment:baseAlign,
+      fill:{patternType:'solid', fgColor:{rgb:'4472C4'}},
+      border
+    });
+  }
+
+  // Mark off-shift days (выходные вахты) with light-gray header fill — informative without dimming cells
+  for(let d=1;d<=days;d++){
+    if(smgIsShiftOff(d)){
+      const c = 5 + (d-1);
+      const existing = ws[ref(2,c)] && ws[ref(2,c)].s ? ws[ref(2,c)].s : null;
+      // Don't override the 'today' highlight
+      if(!existing || existing.fill?.fgColor?.rgb !== '4472C4'){
+        setStyle(ref(2,c), {
+          font:{bold:true, sz:11, color:{rgb:'606060'}},
+          alignment:baseAlign,
+          fill:{patternType:'solid', fgColor:{rgb:'F2F2F2'}},
+          border
+        });
+      }
+    }
+  }
+
+  // Freeze top headers + first 5 columns
+  ws['!freeze']={xSplit:5, ySplit:3};
+  ws['!views']=[{state:'frozen', xSplit:5, ySplit:3}];
+
   XLSX.utils.book_append_sheet(wb,ws,'СМГ '+monthName);
 
+  // ── Детализация sheet
   const detAoa=[['ДЕТАЛИЗАЦИЯ'],['Объём','Дата','Выполнено','Ед.','Примечания']];
   vols.forEach(vol=>{
     prog.filter(p=>p.volume_id===vol.id&&p.row_type!=='plan').sort((a,b)=>a.work_date>b.work_date?1:-1).forEach(p=>
       detAoa.push([vol.name,p.work_date,p.completed,vol.unit,p.notes||'']));
   });
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(detAoa),'Детализация');
+  const detWs=XLSX.utils.aoa_to_sheet(detAoa);
+  detWs['!cols']=[{wch:30},{wch:12},{wch:12},{wch:8},{wch:40}];
+  detWs['!merges']=[{s:{r:0,c:0},e:{r:0,c:4}}];
+  // Title row style
+  if(detWs['A1']) detWs['A1'].s={font:{bold:true,sz:13},alignment:{horizontal:'center'},fill:{patternType:'solid',fgColor:{rgb:'D9E1F2'}}};
+  // Header row (row 2)
+  for(let c=0;c<5;c++){
+    const r=ref(1,c);
+    if(detWs[r]) detWs[r].s={font:{bold:true},alignment:baseAlign,fill:{patternType:'solid',fgColor:{rgb:'BDD7EE'}},border};
+  }
+  XLSX.utils.book_append_sheet(wb,detWs,'Детализация');
 
   XLSX.writeFile(wb,site.name.replace(/[\/\\:*?"<>|]/g,'_')+'_СМГ_'+SMG_MONTHS[smgMonth]+'_'+smgYear+'.xlsx');
   toast('Excel сохранён','ok');
