@@ -21,21 +21,48 @@ function _buildDxfLabel(sem, idx){
   const data = sem.data || {};
   const PREFIX = {borehole:'СКВ', pit:'Ш', ggs:'ГГС', ogs:'ОГС', repere:'Рп', benchmark:'Мк', steel_angle:'Уг', other:'Т'};
   const hasData = type==='borehole' || type==='pit';
-  // Для скважин/шурфов: name=label, desc=data.desc; для остальных: name=префикс, desc=note
-  const name = hasData ? (data.label || (PREFIX[type]||'Т')+'-'+idx) : (PREFIX[type]||'Т')+'-'+idx;
-  const desc = hasData ? (data.desc||'').trim() : (data.note||'').trim();
-  const attrs = [];
-  if (data.depth) attrs.push('H=' + data.depth);
-  if (data.diam)  attrs.push('d=' + data.diam);
-  if (data.ugv)   attrs.push('УГВ=' + data.ugv);
-  if (data.exec)  attrs.push(data.exec);
-  let label = attrs.length ? name + ' (' + attrs.join(' ') + ')' : name;
-  // Описание разреза — всегда добавляем; пробел если поле пустое
-  label += ' ' + (desc || ' ');
-  return label;
+  if(hasData){
+    const name = data.label || (PREFIX[type]||'Т')+'-'+idx;
+    // Все атрибуты всегда выводим, даже пустые — через запятую
+    const attrs = [
+      'H=' + (data.depth||''),
+      'd=' + (data.diam||''),
+      'УГВ=' + (data.ugv||''),
+      (data.desc||'').trim()
+    ];
+    return name + ' (' + attrs.join(', ') + ')';
+  } else {
+    const name = (PREFIX[type]||'Т')+'-'+idx;
+    const note = (data.note||'').trim();
+    return note ? name + ' (' + note + ')' : name;
+  }
 }
 
-function buildVolumesDXF({points, coordSys, siteName}){
+function _dxfPolyline(coords, layer, closed){
+  // R12 POLYLINE + VERTEX*N + SEQEND
+  // coords = [{x, y}], x=northing, y=easting (AutoCAD: code10=Y_east, code20=X_north)
+  let s = '';
+  s += _dxfG(0,'POLYLINE');
+  s += _dxfG(8, layer);
+  s += _dxfG(66, '1');      // vertices follow
+  s += _dxfG(10, '0.0') + _dxfG(20, '0.0') + _dxfG(30, '0.0');
+  s += _dxfG(70, closed ? '1' : '0');
+  for(const c of coords){
+    const cx = parseFloat(c.x) || 0;
+    const cy = parseFloat(c.y) || 0;
+    s += _dxfG(0,'VERTEX');
+    s += _dxfG(8, layer);
+    s += _dxfG(10, cy.toFixed(3));  // DXF X = easting
+    s += _dxfG(20, cx.toFixed(3));  // DXF Y = northing
+    s += _dxfG(30, '0.0');
+  }
+  s += _dxfG(0,'SEQEND');
+  return s;
+}
+
+function buildVolumesDXF({points, polylines, polygons, coordSys, siteName}){
+  polylines = polylines || [];
+  polygons  = polygons  || [];
   const axisLabel = coordSys==='wgs' ? 'LAT / LON (WGS-84)' :
                     coordSys==='msk' ? 'X(northing) / Y(easting) МСК-86/89' :
                                        'X(northing) / Y(easting) ГСК-2011';
@@ -48,30 +75,27 @@ function buildVolumesDXF({points, coordSys, siteName}){
 
   // TABLES section — define layers
   s += _dxfG(0,'SECTION') + _dxfG(2,'TABLES');
-  s += _dxfG(0,'TABLE') + _dxfG(2,'LAYER') + _dxfG(70,'2');
-  // Layer СКВАЖИНЫ (blue=5)
-  s += _dxfG(0,'LAYER') + _dxfG(2,'СКВАЖИНЫ') + _dxfG(70,'0') + _dxfG(62,'5') + _dxfG(6,'CONTINUOUS');
-  // Layer ПОДПИСИ (yellow=2)
-  s += _dxfG(0,'LAYER') + _dxfG(2,'ПОДПИСИ') + _dxfG(70,'0') + _dxfG(62,'2') + _dxfG(6,'CONTINUOUS');
+  s += _dxfG(0,'TABLE') + _dxfG(2,'LAYER') + _dxfG(70,'4');
+  s += _dxfG(0,'LAYER') + _dxfG(2,'СКВАЖИНЫ') + _dxfG(70,'0') + _dxfG(62,'5')  + _dxfG(6,'CONTINUOUS');
+  s += _dxfG(0,'LAYER') + _dxfG(2,'ПОДПИСИ')  + _dxfG(70,'0') + _dxfG(62,'2')  + _dxfG(6,'CONTINUOUS');
+  s += _dxfG(0,'LAYER') + _dxfG(2,'ЛИНИИ')    + _dxfG(70,'0') + _dxfG(62,'3')  + _dxfG(6,'CONTINUOUS');
+  s += _dxfG(0,'LAYER') + _dxfG(2,'КОНТУРЫ')  + _dxfG(70,'0') + _dxfG(62,'4')  + _dxfG(6,'CONTINUOUS');
   s += _dxfG(0,'ENDTAB');
   s += _dxfG(0,'ENDSEC');
 
   // ENTITIES section
   s += _dxfG(0,'SECTION') + _dxfG(2,'ENTITIES');
 
+  // Points + labels
   for(const pt of points){
     const x = parseFloat(pt.x) || 0;
     const y = parseFloat(pt.y) || 0;
     const txt = pt.label || pt.type || 'Точка';
-
-    // POINT entity (DXF X=easting=y, DXF Y=northing=x — AutoCAD convention)
     s += _dxfG(0,'POINT');
     s += _dxfG(8,'СКВАЖИНЫ');
     s += _dxfG(10, y.toFixed(3));
     s += _dxfG(20, x.toFixed(3));
     s += _dxfG(30, '0.0');
-
-    // TEXT entity for label
     s += _dxfG(0,'TEXT');
     s += _dxfG(8,'ПОДПИСИ');
     s += _dxfG(10, (y + 0.5).toFixed(3));
@@ -81,10 +105,37 @@ function buildVolumesDXF({points, coordSys, siteName}){
     s += _dxfG(1, txt || ' ');
   }
 
-  // Comment with metadata
-  s += _dxfG(0,'TEXT');
-  s += _dxfG(8,'ПОДПИСИ');
-  s += _dxfG(10,'0.0'); s += _dxfG(20,'0.0'); s += _dxfG(30,'0.0');
+  // Polylines (LineString)
+  for(const pl of polylines){
+    s += _dxfPolyline(pl.coords, 'ЛИНИИ', false);
+    if(pl.name){
+      const first = pl.coords[0];
+      if(first){
+        s += _dxfG(0,'TEXT') + _dxfG(8,'ПОДПИСИ');
+        s += _dxfG(10,(parseFloat(first.y)||0).toFixed(3));
+        s += _dxfG(20,(parseFloat(first.x)||0).toFixed(3));
+        s += _dxfG(30,'0.0') + _dxfG(40,'1.5') + _dxfG(1, pl.name);
+      }
+    }
+  }
+
+  // Polygons
+  for(const pg of polygons){
+    for(const ring of pg.rings){
+      s += _dxfPolyline(ring, 'КОНТУРЫ', true);
+    }
+    if(pg.name && pg.rings[0] && pg.rings[0][0]){
+      const first = pg.rings[0][0];
+      s += _dxfG(0,'TEXT') + _dxfG(8,'ПОДПИСИ');
+      s += _dxfG(10,(parseFloat(first.y)||0).toFixed(3));
+      s += _dxfG(20,(parseFloat(first.x)||0).toFixed(3));
+      s += _dxfG(30,'0.0') + _dxfG(40,'1.5') + _dxfG(1, pg.name);
+    }
+  }
+
+  // Metadata label
+  s += _dxfG(0,'TEXT') + _dxfG(8,'ПОДПИСИ');
+  s += _dxfG(10,'0.0') + _dxfG(20,'0.0') + _dxfG(30,'0.0');
   s += _dxfG(40,'0.5');
   s += _dxfG(1, (siteName||'Объект') + ' | ' + axisLabel);
 
@@ -107,50 +158,68 @@ function _dxfDownload(dxfStr, filename){
   URL.revokeObjectURL(a.href);
 }
 
-function _collectDxfPoints(site, sys){
-  const points = [];
+function _collectDxfFeatures(site, sys){
+  const points = [], polylines = [], polygons = [];
   const vols = site.volumes || [];
   let idx = 0;
 
-  for(const vol of vols){
-    // Check vol.geojson (planned points)
-    const gjSets = [];
-    if(vol.geojson) gjSets.push(vol.geojson);
+  const processGJ = (gjRaw, volName, isFact) => {
+    let fc;
+    try{ fc = typeof gjRaw==='string'? JSON.parse(gjRaw) : gjRaw; }catch(e){ return; }
+    if(!fc || fc.type!=='FeatureCollection') return;
+    for(const feat of (fc.features||[])){
+      if(!feat.geometry) continue;
+      const geomType = feat.geometry.type;
+      const sem = feat.properties?.sem || {};
+      const suffix = isFact ? ' (факт)' : '';
 
-    for(const gj of gjSets){
-      let fc;
-      try{ fc = typeof gj==='string'? JSON.parse(gj) : gj; }catch(e){ continue; }
-      if(!fc || fc.type!=='FeatureCollection') continue;
-      for(const feat of (fc.features||[])){
-        if(!feat.geometry || feat.geometry.type!=='Point') continue;
+      if(geomType === 'Point'){
         const [lng, lat] = feat.geometry.coordinates;
-        const sem = feat.properties?.sem || {};
-        const label = _buildDxfLabel(sem, ++idx);
-        const type = sem.type || vol.name || '';
-        const coords = _convertCoords(lat, lng, sys);
-        points.push({x:coords.x, y:coords.y, label, type});
+        const label = _buildDxfLabel(sem, ++idx) + suffix;
+        const c = _convertCoords(lat, lng, sys);
+        points.push({x:c.x, y:c.y, label});
+
+      } else if(geomType === 'LineString'){
+        const name = (feat.properties?.name || volName || '') + suffix;
+        const coords = feat.geometry.coordinates.map(([lng,lat])=>{
+          const c = _convertCoords(lat,lng,sys); return {x:c.x,y:c.y};
+        });
+        polylines.push({coords, name});
+
+      } else if(geomType === 'MultiLineString'){
+        const name = (feat.properties?.name || volName || '') + suffix;
+        for(const line of feat.geometry.coordinates){
+          const coords = line.map(([lng,lat])=>{const c=_convertCoords(lat,lng,sys);return{x:c.x,y:c.y};});
+          polylines.push({coords, name});
+        }
+
+      } else if(geomType === 'Polygon'){
+        const name = (feat.properties?.name || volName || '') + suffix;
+        const rings = feat.geometry.coordinates.map(ring =>
+          ring.map(([lng,lat])=>{const c=_convertCoords(lat,lng,sys);return{x:c.x,y:c.y};})
+        );
+        polygons.push({rings, name});
+
+      } else if(geomType === 'MultiPolygon'){
+        const name = (feat.properties?.name || volName || '') + suffix;
+        for(const poly of feat.geometry.coordinates){
+          const rings = poly.map(ring =>
+            ring.map(([lng,lat])=>{const c=_convertCoords(lat,lng,sys);return{x:c.x,y:c.y};})
+          );
+          polygons.push({rings, name});
+        }
       }
     }
+  };
 
-    // Also check vol_progress entries for this volume
+  for(const vol of vols){
+    if(vol.geojson) processGJ(vol.geojson, vol.name, false);
     for(const vp of (site.vol_progress||[])){
-      if(vp.volume_id !== vol.id) continue;
-      if(!vp.geojson) continue;
-      let fc;
-      try{ fc = typeof vp.geojson==='string'? JSON.parse(vp.geojson) : vp.geojson; }catch(e){ continue; }
-      if(!fc || fc.type!=='FeatureCollection') continue;
-      for(const feat of (fc.features||[])){
-        if(!feat.geometry || feat.geometry.type!=='Point') continue;
-        const [lng, lat] = feat.geometry.coordinates;
-        const sem = feat.properties?.sem || {};
-        const label = _buildDxfLabel(sem, ++idx) + ' (факт)';
-        const type = sem.type || vol.name || '';
-        const coords = _convertCoords(lat, lng, sys);
-        points.push({x:coords.x, y:coords.y, label, type});
-      }
+      if(vp.volume_id !== vol.id || !vp.geojson) continue;
+      processGJ(vp.geojson, vol.name, true);
     }
   }
-  return points;
+  return {points, polylines, polygons};
 }
 
 function _convertCoords(lat, lng, sys){
@@ -215,14 +284,14 @@ async function exportVolumesDXF(siteId){
     return;
   }
 
-  const points = _collectDxfPoints(site, sys);
-  if(!points.length){
-    toast('Нет точечных объёмов для экспорта','err');
+  const {points, polylines, polygons} = _collectDxfFeatures(site, sys);
+  if(!points.length && !polylines.length && !polygons.length){
+    toast('Нет геометрии объёмов для экспорта','err');
     return;
   }
 
-  const dxf = buildVolumesDXF({points, coordSys:sys, siteName:site.name||''});
+  const dxf = buildVolumesDXF({points, polylines, polygons, coordSys:sys, siteName:site.name||''});
   const fname = (site.name||'объект').replace(/[\\/:*?"<>|]/g,'_') + '_объёмы.dxf';
   _dxfDownload(dxf, fname);
-  toast(`DXF сохранён (${points.length} точек)`, 'ok');
+  toast(`DXF сохранён (${points.length} точек, ${polylines.length} линий, ${polygons.length} контуров)`, 'ok');
 }

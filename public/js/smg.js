@@ -290,10 +290,10 @@ function smgRender(){
     const dt=new Date(smgYear,smgMonth,d);
     const off=smgIsShiftOff(d);
     const tdy=smgIsToday(d);
-    thead+=`<th class="smg-hd-day${off?' smg-hd-off':''}${tdy?' smg-hd-today':''}"
+    thead+=`<th class="smg-hd-day${tdy?' smg-hd-today':''}"
       style="width:${cellW}px;min-width:${cellW}px;top:0;z-index:19" title="${SMG_DOWS[dt.getDay()]} ${d}${off?' (выходной вахты)':''}">
       <div style="font-size:${fs}px;font-weight:700;line-height:1.2">${d}</div>
-      <div style="font-size:${Math.round(8*_smgZoom)}px;opacity:.7;line-height:1">${off?'⊘':SMG_DOWS[dt.getDay()]}</div>
+      <div style="font-size:${Math.round(8*_smgZoom)}px;opacity:.7;line-height:1">${SMG_DOWS[dt.getDay()]}</div>
     </th>`;
   }
   thead+=`<th class="smg-hd-tot" style="min-width:70px;top:0;z-index:19">Факт</th>
@@ -1117,20 +1117,24 @@ function smgExportExcel(){
   const dows=['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
   const wb=XLSX.utils.book_new();
   const today=new Date().toISOString().split('T')[0];
+  const todayStr=today.replace(/-/g,'.');
 
-  const hdr=['Вид работ','Строка','Ед.','Объём'];
+  // Header row: №П/П + Вид работ + Строка + Ед. + Объём + дни + итог + % + Δ + Акт
+  const hdr=['№П/П','Вид работ','Строка','Ед.','Объём'];
   for(let d=1;d<=days;d++){const dt=new Date(smgYear,smgMonth,d);hdr.push(d+' '+dows[dt.getDay()]+(smgIsShiftOff(d)?'(⊘)':''));}
-  hdr.push('Факт','%','Δ к плану','Актировано');
+  hdr.push('План/Факт','% Выполнения','Δ к плану на текущую дату','Актировано');
 
-  const aoa=[['СМГ — '+site.name+' — '+monthName],[],hdr];
+  const aoa=[['СМГ — '+site.name+' — '+monthName+' '+todayStr],[],hdr];
   const cats=['geology','geodesy'];
   const catLabels={geology:'ГЕОЛОГИЯ',geodesy:'ГЕОДЕЗИЯ'};
 
+  let seqNo=0;
   cats.forEach(cat=>{
     const catVols=vols.filter(v=>v.category===cat);
     if(!catVols.length)return;
     aoa.push([catLabels[cat]]);
     catVols.forEach(vol=>{
+      seqNo++;
       const factEntries=prog.filter(p=>p.volume_id===vol.id&&p.row_type!=='plan');
       const factMap={};
       factEntries.forEach(p=>{factMap[p.work_date]=(factMap[p.work_date]||0)+(+p.completed||0);});
@@ -1141,23 +1145,27 @@ function smgExportExcel(){
       let pT=0,fT=0;
       for(let d=1;d<=days;d++){const ds=smgDateStr(d);if(ds>today)break;pT+=(ep[ds]||0);fT+=(factMap[ds]||0);}
       const delta=Math.round(fT-pT);
+      let planTotal=0;
+      for(let d=1;d<=days;d++)planTotal+=(ep[smgDateStr(d)]||0);
 
-      const planRow=[vol.name,'ПЛАН',vol.unit,vol.amount];
+      // ПЛАН: [№, название, 'ПЛАН', ед, объём, ...дни, сумма_плана, %, Δ, '']
+      const planRow=[seqNo,vol.name,'ПЛАН',vol.unit,vol.amount];
       for(let d=1;d<=days;d++)planRow.push(ep[smgDateStr(d)]||'');
-      planRow.push('','',(delta>0?'+':'')+delta,'');
+      planRow.push(planTotal, pct+'%', (delta>0?'+':'')+delta, '');
       aoa.push(planRow);
 
-      const factRow=[vol.name,'ФАКТ',vol.unit,vol.amount];
+      // ФАКТ: ['', '', 'ФАКТ', '', '', ...дни, итог_факт, '', '', кол-во_акт]
+      const factRow=['','','ФАКТ','',''];
       for(let d=1;d<=days;d++)factRow.push(factMap[smgDateStr(d)]||'');
-      factRow.push(totalFact,pct+'%','',actCount||'');
+      factRow.push(totalFact, '', '', actCount||'');
       aoa.push(factRow);
     });
   });
 
   const ws=XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols']=[{wch:28},{wch:6},{wch:6},{wch:8}];
+  ws['!cols']=[{wch:5},{wch:28},{wch:6},{wch:6},{wch:8}];
   for(let d=1;d<=days;d++)ws['!cols'].push({wch:5});
-  ws['!cols'].push({wch:8},{wch:6},{wch:10},{wch:10});
+  ws['!cols'].push({wch:10},{wch:13},{wch:22},{wch:10});
   XLSX.utils.book_append_sheet(wb,ws,'СМГ '+monthName);
 
   const detAoa=[['ДЕТАЛИЗАЦИЯ'],['Объём','Дата','Выполнено','Ед.','Примечания']];
@@ -1196,7 +1204,6 @@ function smgInjectStyles(){
 .smg-hd-name{background:var(--s);color:var(--tx);font-weight:700;font-size:11px;text-align:left;padding:6px 10px}
 .smg-hd-type{background:var(--s2)}
 .smg-hd-day{background:var(--s);font-weight:700;text-align:center;padding:3px 1px;white-space:nowrap;position:sticky}
-.smg-hd-day.smg-hd-off{background:#f5f5f5;color:#a3a3a3}
 .smg-hd-day.smg-hd-today{background:#1d4ed8;color:#fff}
 .smg-hd-tot{background:var(--s2);font-weight:700;font-size:10px;color:var(--tx3);text-align:right;padding:4px 8px;white-space:nowrap}
 .smg-hd-act{color:#7c3aed}
@@ -1218,7 +1225,7 @@ function smgInjectStyles(){
 .smg-cell{cursor:pointer;text-align:center;user-select:none;transition:filter 80ms}
 .smg-cell:hover{filter:brightness(.88)}
 .smg-plan-cell{background:#eff6ff}
-.smg-plan-cell.smg-off{background:#f5f5f5;opacity:.5;cursor:default}
+.smg-plan-cell.smg-off{cursor:default}
 .smg-plan-cell:not(.smg-off):hover{background:#dbeafe}
 .smg-manual{background:#e0e7ff!important}
 .smg-fact-cell{background:var(--s)}
@@ -1226,7 +1233,7 @@ function smgInjectStyles(){
 .smg-fact-partial{background:#fef3c7!important}
 .smg-fact-behind{background:#fee2e2!important}
 .smg-fact-act{background:#fed7aa!important}
-.smg-off{background:#f5f5f5!important;opacity:.55;cursor:default}
+.smg-off{cursor:default}
 .smg-today{box-shadow:inset 0 0 0 2px #2563eb!important}
 .smg-selected{box-shadow:inset 0 0 0 2px #1d4ed8!important;z-index:3;position:relative}
 .smg-drag-target{box-shadow:inset 0 0 0 2px #7c3aed!important;filter:brightness(.85)}
