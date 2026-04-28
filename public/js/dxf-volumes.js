@@ -73,14 +73,31 @@ function buildVolumesDXF({points, polylines, polygons, coordSys, siteName}){
   s += _dxfG(9,'$INSUNITS') + _dxfG(70,'6');
   s += _dxfG(0,'ENDSEC');
 
-  // TABLES section — define layers
+  // TABLES section — define linetypes + layers
   s += _dxfG(0,'SECTION') + _dxfG(2,'TABLES');
+
+  // LTYPE table — required by AutoCAD even for CONTINUOUS-only files
+  s += _dxfG(0,'TABLE') + _dxfG(2,'LTYPE') + _dxfG(70,'1');
+  s += _dxfG(0,'LTYPE') + _dxfG(2,'CONTINUOUS') + _dxfG(70,'0');
+  s += _dxfG(3,'Solid line') + _dxfG(72,'65') + _dxfG(73,'0') + _dxfG(40,'0.0');
+  s += _dxfG(0,'ENDTAB');
+
+  // LAYER table
   s += _dxfG(0,'TABLE') + _dxfG(2,'LAYER') + _dxfG(70,'4');
   s += _dxfG(0,'LAYER') + _dxfG(2,'СКВАЖИНЫ') + _dxfG(70,'0') + _dxfG(62,'5')  + _dxfG(6,'CONTINUOUS');
   s += _dxfG(0,'LAYER') + _dxfG(2,'ПОДПИСИ')  + _dxfG(70,'0') + _dxfG(62,'2')  + _dxfG(6,'CONTINUOUS');
   s += _dxfG(0,'LAYER') + _dxfG(2,'ЛИНИИ')    + _dxfG(70,'0') + _dxfG(62,'3')  + _dxfG(6,'CONTINUOUS');
   s += _dxfG(0,'LAYER') + _dxfG(2,'КОНТУРЫ')  + _dxfG(70,'0') + _dxfG(62,'4')  + _dxfG(6,'CONTINUOUS');
   s += _dxfG(0,'ENDTAB');
+
+  // STYLE table — empty but expected by AutoCAD R12
+  s += _dxfG(0,'TABLE') + _dxfG(2,'STYLE') + _dxfG(70,'0');
+  s += _dxfG(0,'ENDTAB');
+
+  s += _dxfG(0,'ENDSEC');
+
+  // BLOCKS section — required by AutoCAD R12 even when empty
+  s += _dxfG(0,'SECTION') + _dxfG(2,'BLOCKS');
   s += _dxfG(0,'ENDSEC');
 
   // ENTITIES section
