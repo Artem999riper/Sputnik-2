@@ -321,8 +321,23 @@ async function generateHtmlExport(siteId, bbox) {
     }
   }
 
+  // Встраиваем Leaflet для офлайн режима
+  let leafletInline = null;
+  if (_htmlExOpts.offline) {
+    try {
+      toast('📥 Встраиваю Leaflet...', 'ok');
+      const [cssR, jsR] = await Promise.all([
+        fetch('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'),
+        fetch('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js')
+      ]);
+      leafletInline = { css: await cssR.text(), js: await jsR.text() };
+    } catch(e) {
+      toast('Не удалось встроить Leaflet — используется CDN', 'err');
+    }
+  }
+
   const dateStr = new Date().toLocaleDateString('ru');
-  const html = _buildHtmlExport(s.name, bbox, pts, kmlData, SEM_LABEL, dateStr, _htmlExOpts, basePts, offlineTiles);
+  const html = _buildHtmlExport(s.name, bbox, pts, kmlData, SEM_LABEL, dateStr, _htmlExOpts, basePts, offlineTiles, leafletInline);
   const a = document.createElement('a');
   a.href = 'data:text/html;charset=utf-8,'+encodeURIComponent(html);
   a.download = s.name.replace(/[\/\\:*?"<>|]/g,'_')
@@ -359,9 +374,15 @@ function _exFmtCoord(lat, lng, sys) {
 }
 
 // ── Сборка HTML ───────────────────────────────────────────
-function _buildHtmlExport(siteName, bbox, pts, kmlData, SEM_LABEL, dateStr, opts, basePts, offlineTiles) {
+function _buildHtmlExport(siteName, bbox, pts, kmlData, SEM_LABEL, dateStr, opts, basePts, offlineTiles, leafletInline) {
   basePts = basePts || [];
   offlineTiles = offlineTiles || null;
+  const leafCss = (leafletInline && leafletInline.css)
+    ? `<style>${leafletInline.css}</style>`
+    : `<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>`;
+  const leafJs = (leafletInline && leafletInline.js)
+    ? `<script>${leafletInline.js.replace(/<\/script>/gi,'<\\/script>')}<\/script>`
+    : `<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>`;
   const he = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
   const sys = (opts && opts.coordSys) || 'wgs';
@@ -453,7 +474,7 @@ tr:last-child td{border-bottom:none}
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>${he(siteName)} — Объёмы</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+${leafCss}
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f1f5f9;color:#1e293b}
@@ -492,7 +513,7 @@ ${isMobile ? mobileCss : pcCss}
   </div>
 </div>
 <div id="footer">ПурГеоКом · ${he(siteName)} · ${dateStr}</div>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>
+${leafJs}
 <script>
 (function(){
 var PTS=${JSON.stringify(mapData)};
@@ -624,7 +645,7 @@ else if(KML.length){
   });});
   if(kbounds.length) map.fitBounds(L.latLngBounds(kbounds),{padding:[30,30]});
 }
-setTimeout(function(){map.invalidateSize();},150);
+[100,350,800].forEach(function(t){setTimeout(function(){map.invalidateSize();},t);});
 })();
 <\/script>
 </body>

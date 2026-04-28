@@ -16,6 +16,19 @@ function _dxfG(code, val){
   return code.toString().padStart(3,' ') + '\n' + val + '\n';
 }
 
+function _buildDxfLabel(sem, idx){
+  const type = sem.type || '';
+  const data = sem.data || {};
+  const PREFIX = {borehole:'СКВ', pit:'Ш', ggs:'ГГС', ogs:'ОГС', repere:'Рп', benchmark:'Мк', steel_angle:'Уг', other:'Т'};
+  let name = data.label || data.note || (PREFIX[type] || 'Т') + '-' + idx;
+  const attrs = [];
+  if (data.depth) attrs.push('H=' + data.depth);
+  if (data.diam)  attrs.push('d=' + data.diam);
+  if (data.ugv)   attrs.push('УГВ=' + data.ugv);
+  if (data.exec)  attrs.push(data.exec);
+  return attrs.length ? name + ' (' + attrs.join(' ') + ')' : name;
+}
+
 function buildVolumesDXF({points, coordSys, siteName}){
   const axisLabel = coordSys==='wgs' ? 'LAT / LON (WGS-84)' :
                     coordSys==='msk' ? 'X(northing) / Y(easting) МСК-86/89' :
@@ -43,22 +56,20 @@ function buildVolumesDXF({points, coordSys, siteName}){
   for(const pt of points){
     const x = parseFloat(pt.x) || 0;
     const y = parseFloat(pt.y) || 0;
-    const label = pt.label || pt.type || 'Точка';
-    const depth = pt.depth ? ` (${pt.depth}м)` : '';
-    const txt = label + depth;
+    const txt = pt.label || pt.type || 'Точка';
 
-    // POINT entity
+    // POINT entity (DXF X=easting=y, DXF Y=northing=x — AutoCAD convention)
     s += _dxfG(0,'POINT');
     s += _dxfG(8,'СКВАЖИНЫ');
-    s += _dxfG(10, x.toFixed(3));
-    s += _dxfG(20, y.toFixed(3));
+    s += _dxfG(10, y.toFixed(3));
+    s += _dxfG(20, x.toFixed(3));
     s += _dxfG(30, '0.0');
 
     // TEXT entity for label
     s += _dxfG(0,'TEXT');
     s += _dxfG(8,'ПОДПИСИ');
-    s += _dxfG(10, (x + 0.5).toFixed(3));
-    s += _dxfG(20, (y + 0.5).toFixed(3));
+    s += _dxfG(10, (y + 0.5).toFixed(3));
+    s += _dxfG(20, (x + 0.5).toFixed(3));
     s += _dxfG(30, '0.0');
     s += _dxfG(40, '1.5');
     s += _dxfG(1, txt);
@@ -108,12 +119,10 @@ function _collectDxfPoints(site, sys){
         if(!feat.geometry || feat.geometry.type!=='Point') continue;
         const [lng, lat] = feat.geometry.coordinates;
         const sem = feat.properties?.sem || {};
-        const data = sem.data || {};
-        const label = data.label || data.note || `Т-${++idx}`;
-        const depth = data.depth || '';
+        const label = _buildDxfLabel(sem, ++idx);
         const type = sem.type || vol.name || '';
         const coords = _convertCoords(lat, lng, sys);
-        points.push({x:coords.x, y:coords.y, label, depth, type});
+        points.push({x:coords.x, y:coords.y, label, type});
       }
     }
 
@@ -128,12 +137,10 @@ function _collectDxfPoints(site, sys){
         if(!feat.geometry || feat.geometry.type!=='Point') continue;
         const [lng, lat] = feat.geometry.coordinates;
         const sem = feat.properties?.sem || {};
-        const data = sem.data || {};
-        const label = (data.label || data.note || `Ф-${++idx}`) + ' (факт)';
-        const depth = data.depth || '';
+        const label = _buildDxfLabel(sem, ++idx) + ' (факт)';
         const type = sem.type || vol.name || '';
         const coords = _convertCoords(lat, lng, sys);
-        points.push({x:coords.x, y:coords.y, label, depth, type});
+        points.push({x:coords.x, y:coords.y, label, type});
       }
     }
   }
