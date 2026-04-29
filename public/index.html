@@ -8,6 +8,92 @@
 </head>
 <body>
 
+<!-- SPLASH SCREEN -->
+<div id="splash">
+  <div id="splash-inner">
+    <div id="splash-sat">
+      <svg viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- solar panels left -->
+        <rect x="2" y="30" width="22" height="8" rx="2" fill="#4F81BD" opacity=".9"/>
+        <line x1="6"  y1="30" x2="6"  y2="38" stroke="#B9CCE4" stroke-width=".8"/>
+        <line x1="10" y1="30" x2="10" y2="38" stroke="#B9CCE4" stroke-width=".8"/>
+        <line x1="14" y1="30" x2="14" y2="38" stroke="#B9CCE4" stroke-width=".8"/>
+        <line x1="18" y1="30" x2="18" y2="38" stroke="#B9CCE4" stroke-width=".8"/>
+        <!-- arm left -->
+        <rect x="24" y="33" width="8" height="2" rx="1" fill="#ccc"/>
+        <!-- body -->
+        <rect x="32" y="26" width="16" height="16" rx="3" fill="#e8eef6" stroke="#4F81BD" stroke-width="1.5"/>
+        <circle cx="40" cy="34" r="3" fill="#4F81BD" opacity=".7"/>
+        <!-- arm right -->
+        <rect x="48" y="33" width="8" height="2" rx="1" fill="#ccc"/>
+        <!-- solar panels right -->
+        <rect x="56" y="30" width="22" height="8" rx="2" fill="#4F81BD" opacity=".9"/>
+        <line x1="60" y1="30" x2="60" y2="38" stroke="#B9CCE4" stroke-width=".8"/>
+        <line x1="64" y1="30" x2="64" y2="38" stroke="#B9CCE4" stroke-width=".8"/>
+        <line x1="68" y1="30" x2="68" y2="38" stroke="#B9CCE4" stroke-width=".8"/>
+        <line x1="72" y1="30" x2="72" y2="38" stroke="#B9CCE4" stroke-width=".8"/>
+        <!-- antenna -->
+        <line x1="40" y1="26" x2="40" y2="18" stroke="#aaa" stroke-width="1.2"/>
+        <circle cx="40" cy="17" r="1.5" fill="#9BBB59"/>
+        <!-- signal arcs -->
+        <path d="M44 20 Q50 15 44 10" stroke="#9BBB59" stroke-width="1" fill="none" stroke-linecap="round" opacity=".7"/>
+        <path d="M46 22 Q55 13 46 7"  stroke="#9BBB59" stroke-width="1" fill="none" stroke-linecap="round" opacity=".45"/>
+      </svg>
+    </div>
+    <div id="splash-title">Спутник</div>
+  </div>
+</div>
+
+<style>
+#splash{
+  position:fixed;inset:0;z-index:99999;
+  background:#0f172a;
+  display:flex;align-items:center;justify-content:center;
+  animation:splashFadeOut .5s ease-in 2s forwards;
+}
+#splash-inner{
+  display:flex;flex-direction:column;align-items:center;gap:22px;
+  animation:splashRise .7s cubic-bezier(.22,.68,0,1.2) both;
+}
+#splash-sat{
+  width:120px;height:120px;
+  animation:splashSpin 3s linear infinite, splashFloat 2s ease-in-out infinite;
+}
+#splash-sat svg{width:100%;height:100%;}
+#splash-title{
+  font-family:'Segoe UI',system-ui,sans-serif;
+  font-size:36px;font-weight:700;letter-spacing:6px;
+  color:#e8eef6;text-transform:uppercase;
+  animation:splashGlow 1.5s ease-in-out infinite alternate;
+}
+@keyframes splashRise{
+  from{opacity:0;transform:translateY(24px);}
+  to{opacity:1;transform:translateY(0);}
+}
+@keyframes splashFloat{
+  0%,100%{transform:translateY(0);}
+  50%{transform:translateY(-8px);}
+}
+@keyframes splashSpin{
+  from{transform:rotate(0deg);}
+  to{transform:rotate(360deg);}
+}
+@keyframes splashGlow{
+  from{text-shadow:0 0 8px rgba(79,129,189,.4);}
+  to{text-shadow:0 0 22px rgba(79,129,189,.9),0 0 40px rgba(155,187,89,.4);}
+}
+@keyframes splashFadeOut{
+  from{opacity:1;pointer-events:all;}
+  to{opacity:0;pointer-events:none;}
+}
+</style>
+<script>
+  setTimeout(()=>{
+    const s=document.getElementById('splash');
+    if(s){s.addEventListener('animationend',()=>s.remove(),{once:true});}
+  },2400);
+</script>
+
 <div id="tb">
   <div class="logo"><div class="logo-i">⛏</div>ПурГеоКом</div>
   <div class="tdv"></div>
