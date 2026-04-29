@@ -156,6 +156,9 @@ function pgkPageWorkers(pb){
   });
 
   filtered.sort((a,b)=>{
+    const aFired=a.status==='fired', bFired=b.status==='fired';
+    if(aFired&&!bFired)return 1;
+    if(!aFired&&bFired)return -1;
     let va,vb;
     if(_ws==='days'){va=getDays(a);vb=getDays(b);}
     else if(_ws==='base'){va=getBase(a);vb=getBase(b);}

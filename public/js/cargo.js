@@ -100,6 +100,7 @@ function renderGruz(){
         })():''}
         ${o.status==='transit'?`<button class="btn bg2 bxs" onclick="gruzArrived('${escAttr(o.id)}')">✅ Доставлено</button>`:''}
         ${o.status!=='delivered'&&o.status!=='cancelled'?`<button class="btn bd bxs" onclick="gruzSetStatus('${escAttr(o.id)}','cancelled')">✕ Отмена</button>`:''}
+        <button class="btn bs bxs" onclick="gruzExportExcel('${escAttr(o.id)}')">📤</button>
         <button class="btn bs bxs" onclick="gruzEditOrder('${escAttr(o.id)}')">✏️</button>
         <button class="btn bd bxs" onclick="gruzDeleteOrder('${escAttr(o.id)}')">🗑</button>
       </div>
@@ -133,6 +134,7 @@ function renderGruz(){
         </div>`:''}
         ${o.notes?`<div style="font-size:10px;color:var(--tx2);margin-top:4px">📝 ${esc(o.notes)}</div>`:''}
         <div class="gruz-actions" style="margin-top:6px">
+          <button class="btn bs bxs" onclick="event.stopPropagation();gruzExportExcel('${escAttr(o.id)}')">📤</button>
           <button class="btn bs bxs" onclick="event.stopPropagation();gruzEditOrder('${escAttr(o.id)}')">✏️</button>
           <button class="btn bd bxs" onclick="event.stopPropagation();gruzDeleteOrder('${escAttr(o.id)}')">🗑</button>
         </div>
@@ -509,6 +511,101 @@ async function gruzArrived(id){
       }catch(e){toast('Ошибка: '+e.message,'err');}
     }}]
   );
+}
+
+function gruzExportExcel(id){
+  const o=gruzOrders.find(x=>x.id===id);if(!o)return;
+  const base=bases.find(b=>b.id===o.base_id);
+  const items=(o.items||[]).filter(i=>i.name);
+  const STATUS_RU={'new':'Новая','transit':'В пути','delivered':'Доставлена','cancelled':'Отменена'};
+  const fmtD=d=>d?d.split('-').reverse().join('.'):'—';
+
+  // Theme colors
+  const BLUE_HDR='4F81BD', BLUE_LT='B9CCE4', GREEN_HDR='9BBB59', GREEN_LT='C3D69B';
+  const s=(v,opts)=>Object.assign({v,t:typeof v==='number'?'n':'s'},opts||{});
+  const c=(fgRgb,bold,sz)=>({font:{name:'Times New Roman',sz:sz||11,bold:!!bold,color:{rgb:fgRgb||'000000'}},
+    alignment:{vertical:'center',wrapText:true}});
+  const fill=rgb=>({patternType:'solid',fgColor:{rgb}});
+  const border=(style)=>{const b={style,color:{rgb:'595959'}};return{top:b,bottom:b,left:b,right:b};};
+
+  const titleStyle={font:{name:'Times New Roman',sz:13,bold:true},
+    fill:fill('D9E1F2'),border:border('medium'),alignment:{horizontal:'center',vertical:'center'}};
+  const hdrStyle={font:{name:'Times New Roman',sz:11,bold:true,color:{rgb:'FFFFFF'}},
+    fill:fill(BLUE_HDR),border:border('medium'),alignment:{horizontal:'center',vertical:'center',wrapText:true}};
+  const labelStyle={font:{name:'Times New Roman',sz:11,bold:true},
+    fill:fill(GREEN_LT),border:border('thin'),alignment:{vertical:'center'}};
+  const valStyle={font:{name:'Times New Roman',sz:11},border:border('thin'),
+    alignment:{vertical:'center',wrapText:true}};
+  const totStyle={font:{name:'Times New Roman',sz:11,bold:true,color:{rgb:'FFFFFF'}},
+    fill:fill(BLUE_HDR),border:border('medium'),alignment:{horizontal:'right',vertical:'center'}};
+
+  const WB=XLSX.utils.book_new();
+  const ws={};
+  const merges=[];
+  let R=0;
+
+  const setCell=(r,c2,cell)=>{ws[XLSX.utils.encode_cell({r,c:c2})]=cell;};
+  const rowH=(r,h)=>{if(!ws['!rows'])ws['!rows']=[];ws['!rows'][r]={hpx:h};};
+
+  // Title row
+  setCell(R,0,{...titleStyle,v:`Заявка на груз №${o.num}`});
+  merges.push({s:{r:R,c:0},e:{r:R,c:4}});
+  rowH(R,28); R++;
+
+  // Info section: label | value pairs
+  const info=[
+    ['База назначения', base?base.name:'—'],
+    ['Откуда', o.from_desc||'—'],
+    ['Водитель', o.driver||'—'],
+    ['Транспортное средство', o.vehicle||'—'],
+    ['Дата отправки', fmtD(o.depart_date)],
+    ['Ожидаемое прибытие', fmtD(o.eta_date)],
+    ['Фактическое прибытие', fmtD(o.actual_arrive)],
+    ['Статус', STATUS_RU[o.status]||o.status],
+    ['Примечания', o.notes||'—'],
+  ];
+  for(const [lbl,val] of info){
+    setCell(R,0,{...labelStyle,v:lbl});
+    merges.push({s:{r:R,c:0},e:{r:R,c:1}});
+    setCell(R,2,{...valStyle,v:String(val)});
+    merges.push({s:{r:R,c:2},e:{r:R,c:4}});
+    rowH(R,18); R++;
+  }
+  R++; // blank row
+
+  // Items header
+  const HDRS=['№','Наименование','Кол-во','Ед.','Вес, т'];
+  HDRS.forEach((h,ci)=>setCell(R,ci,{...hdrStyle,v:h}));
+  rowH(R,22); R++;
+
+  // Items rows
+  items.forEach((it,idx)=>{
+    const rowFill=idx%2===0?'FFFFFF':BLUE_LT;
+    const rs=(v,bold)=>({font:{name:'Times New Roman',sz:11,bold:!!bold},
+      fill:fill(rowFill),border:border('thin'),alignment:{vertical:'center',wrapText:true},
+      v,t:typeof v==='number'?'n':'s'});
+    setCell(R,0,rs(idx+1,true));
+    setCell(R,1,rs(it.name||''));
+    setCell(R,2,rs(it.qty!=null?+it.qty:''));
+    setCell(R,3,rs(it.unit||'шт'));
+    setCell(R,4,rs(it.weight!=null?+it.weight:''));
+    rowH(R,18); R++;
+  });
+
+  // Total row
+  const tw=(+o.total_weight||0);
+  setCell(R,0,{...totStyle,v:'Итого:'});
+  merges.push({s:{r:R,c:0},e:{r:R,c:3}});
+  setCell(R,4,{...totStyle,v:tw,t:'n',z:'0.00'});
+  rowH(R,20); R++;
+
+  ws['!merges']=merges;
+  ws['!cols']=[{wch:4},{wch:18},{wch:42},{wch:8},{wch:8},{wch:10}];
+  ws['!ref']=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:R-1,c:4}});
+
+  XLSX.utils.book_append_sheet(WB,ws,'Заявка');
+  XLSX.writeFile(WB,`Заявка_${o.num}.xlsx`);
+  toast(`Excel скачан: Заявка_${o.num}.xlsx`,'ok');
 }
 
 async function gruzDeleteOrder(id){
