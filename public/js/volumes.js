@@ -364,8 +364,8 @@ async function exportExcel(siteId){
     ...(s.bases||[]).map(b=>[b.name,b.lat,b.lng,(b.workers||[]).length,(b.machinery||[]).length,(b.materials||[]).length,b.description||''])],'Базы');
 
   // ── Персонал ───────────────────────────────────────────────
-  sh([['ФИО','Должность','Телефон','База','Машина'],
-    ...(s.bases||[]).flatMap(b=>(b.workers||[]).map(w=>{const m=(b.machinery||[]).find(x=>x.id===w.machine_id);return[w.name,w.role||'',w.phone||'',b.name,m?m.name:'']}))],'Персонал');
+  sh([['ФИО','Должность','База','Машина'],
+    ...(s.bases||[]).flatMap(b=>(b.workers||[]).map(w=>{const m=(b.machinery||[]).find(x=>x.id===w.machine_id);return[w.name,w.role||'',b.name,m?m.name:'']}))],'Персонал');
 
   // ── Техника ────────────────────────────────────────────────
   sh([['Название','Тип','Госномер','Статус','База','Широта','Долгота'],

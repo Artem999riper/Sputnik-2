@@ -1,39 +1,24 @@
 async function openPersonnelReport(){
   const today=new Date();
-  if(!pgkWorkers||!pgkWorkers.length){try{pgkWorkers=await fetch(`${API}/pgk/workers`).then(r=>r.json());}catch(e){}}
+  // Always use summary endpoint to get last_shift_start, last_shift_end, rest_days, last_shift_volume
+  let summaryWorkers=[];
+  try{summaryWorkers=await fetch(`${API}/pgk/workers/summary`).then(r=>r.json());}catch(e){}
+  if(summaryWorkers.length)pgkWorkers=summaryWorkers;
+
   const todayStr=today.toISOString().split('T')[0];
-  // Collect all workers from all bases
-  const allWorkers=[];
-  bases.forEach(b=>{
-    (b.workers||[]).forEach(w=>{
-      const mach=(b.machinery||[]).find(m=>m.id===w.machine_id);
-      const days=w.start_date?Math.floor((today-new Date(w.start_date))/86400000):null;
-      allWorkers.push({
-        ...w,
-        base_name:b.name,
-        base_id:b.id,
-        machine_name:mach?mach.name:null,
-        field_days:days
-      });
-    });
-  });
-  // Include workers not assigned to any base (status=home/idle etc)
-  if(pgkWorkers&&pgkWorkers.length){
-    const onBaseIds=new Set(allWorkers.map(w=>w.id));
-    pgkWorkers.filter(w=>!onBaseIds.has(w.id)).forEach(w=>{
-      const days=w.start_date?Math.floor((today-new Date(w.start_date))/86400000):null;
-      allWorkers.push({...w,base_name:'— Не на базе',base_id:null,machine_name:null,field_days:days});
-    });
-  }
-  allWorkers.sort((a,b)=>(b.field_days||0)-(a.field_days||0));
+  const allWorkers=summaryWorkers.map(w=>{
+    const shiftDays=w.last_shift_start
+      ? Math.max(0,Math.floor((new Date(w.last_shift_end||todayStr)-new Date(w.last_shift_start))/86400000))
+      : (w.start_date?Math.floor((today-new Date(w.start_date))/86400000):null);
+    return {...w, field_days:shiftDays};
+  }).sort((a,b)=>(b.field_days||0)-(a.field_days||0));
   _personnelData=[...allWorkers];
 
   const total=allWorkers.length;
-  const inField=allWorkers.filter(w=>w.start_date).length;
-  const longField=allWorkers.filter(w=>(w.field_days||0)>=30).length;
+  const inField=allWorkers.filter(w=>w.last_shift_start&&!w.last_shift_end).length;
+  const longRest=allWorkers.filter(w=>(w.rest_days||0)>=30).length;
 
   const html=`
-    <!-- KPI -->
     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
       <div style="flex:1;min-width:80px;background:var(--s2);border-radius:var(--rs);padding:8px 10px;text-align:center">
         <div style="font-size:22px;font-weight:800;color:var(--acc)">${total}</div>
@@ -41,36 +26,35 @@ async function openPersonnelReport(){
       </div>
       <div style="flex:1;min-width:80px;background:var(--s2);border-radius:var(--rs);padding:8px 10px;text-align:center">
         <div style="font-size:22px;font-weight:800;color:var(--grn)">${inField}</div>
-        <div style="font-size:9px;color:var(--tx3)">В поле</div>
+        <div style="font-size:9px;color:var(--tx3)">На вахте</div>
       </div>
-      <div style="flex:1;min-width:80px;background:${longField?'#fef3c7':'var(--s2)'};border-radius:var(--rs);padding:8px 10px;text-align:center">
-        <div style="font-size:22px;font-weight:800;color:${longField?'#92400e':'var(--tx3)'}">${longField}</div>
-        <div style="font-size:9px;color:var(--tx3)">30+ дней</div>
+      <div style="flex:1;min-width:80px;background:${longRest?'#fef3c7':'var(--s2)'};border-radius:var(--rs);padding:8px 10px;text-align:center">
+        <div style="font-size:22px;font-weight:800;color:${longRest?'#92400e':'var(--tx3)'}">${longRest}</div>
+        <div style="font-size:9px;color:var(--tx3)">Отдых 30+ дн.</div>
       </div>
     </div>
-    <!-- Table -->
     <div style="max-height:400px;overflow-y:auto">
       <table id="personnel-report-table" style="width:100%;border-collapse:collapse;font-size:11px">
         <thead>
           <tr style="background:var(--s2)">
-            <th style="padding:5px 6px;text-align:left;border-bottom:1px solid var(--bd);cursor:pointer" onclick="sortPersonnel('name',this)">Сотрудник ↕</th>
-            <th style="padding:5px 6px;text-align:left;border-bottom:1px solid var(--bd);cursor:pointer" onclick="sortPersonnel('role',this)">Должность ↕</th>
-            <th style="padding:5px 6px;text-align:left;border-bottom:1px solid var(--bd);cursor:pointer" onclick="sortPersonnel('base',this)">База ↕</th>
-            <th style="padding:5px 6px;text-align:left;border-bottom:1px solid var(--bd)">Техника</th>
-            <th style="padding:5px 6px;text-align:center;border-bottom:1px solid var(--bd);cursor:pointer" onclick="sortPersonnel('days',this)">Дней ↕</th>
-            <th style="padding:5px 6px;text-align:left;border-bottom:1px solid var(--bd)">Телефон</th>
+            <th style="padding:5px 6px;text-align:left;border-bottom:1px solid var(--bd)">Сотрудник</th>
+            <th style="padding:5px 6px;text-align:left;border-bottom:1px solid var(--bd)">Должность</th>
+            <th style="padding:5px 6px;text-align:left;border-bottom:1px solid var(--bd)">База</th>
+            <th style="padding:5px 6px;text-align:center;border-bottom:1px solid var(--bd)">Начало вахты</th>
+            <th style="padding:5px 6px;text-align:center;border-bottom:1px solid var(--bd)">Посл. выезд</th>
+            <th style="padding:5px 6px;text-align:center;border-bottom:1px solid var(--bd)">Дней отдыха</th>
+            <th style="padding:5px 6px;text-align:right;border-bottom:1px solid var(--bd)">Объём</th>
           </tr>
         </thead>
         <tbody>
-          ${allWorkers.map((w,i)=>`<tr style="background:${i%2?'var(--s2)':'var(--s)'}${(w.field_days||0)>=30?';border-left:3px solid #f59e0b':''}">
+          ${allWorkers.map((w,i)=>`<tr style="background:${i%2?'var(--s2)':'var(--s)'}">
             <td style="padding:4px 6px;font-weight:600">${esc(w.name)}</td>
             <td style="padding:4px 6px;color:var(--tx2)">${esc(w.role||'—')}</td>
             <td style="padding:4px 6px">${esc(w.base_name||'—')}</td>
-            <td style="padding:4px 6px;color:var(--tx3)">${esc(w.machine_name||'—')}</td>
-            <td style="padding:4px 6px;text-align:center;font-weight:700;color:${(w.field_days||0)>=30?'#92400e':(w.field_days||0)>0?'var(--acc)':'var(--tx3)'}">
-              ${w.field_days!==null?(w.field_days+' дн.'):'—'}
-            </td>
-            <td style="padding:4px 6px;color:var(--tx3)">${esc(w.phone||'—')}</td>
+            <td style="padding:4px 6px;text-align:center">${w.last_shift_start?fmt(w.last_shift_start):'—'}</td>
+            <td style="padding:4px 6px;text-align:center">${w.last_shift_end?fmt(w.last_shift_end):'—'}</td>
+            <td style="padding:4px 6px;text-align:center;${(w.rest_days||0)>=30?'color:#92400e;font-weight:700':''}">${w.rest_days!=null?w.rest_days+' дн.':'—'}</td>
+            <td style="padding:4px 6px;text-align:right;color:var(--acc)">${w.last_shift_volume!=null?w.last_shift_volume:'—'}</td>
           </tr>`).join('')}
         </tbody>
       </table>
@@ -84,38 +68,122 @@ async function openPersonnelReport(){
 
 function exportPersonnelExcel(workers){
   const wb=XLSX.utils.book_new();
-  const today=new Date().toLocaleDateString('ru');
+  const todayDate=new Date();
+  const todayStr=todayDate.toISOString().split('T')[0];
+  const todayFmt=todayDate.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'});
+
+  // Theme colors from Office 2007 scheme used in the example file
+  // accent1=#4F81BD tint0.6 → #B9CCE4 (light blue header fill)
+  // accent3=#9BBB59 tint0.4 → #C3D69B (green header row fill)
+  const COLS=10;
+  const hdrFill='C3D69B';   // light green — header row
+  const rowFill='B9CCE4';   // light blue — odd data rows
+  const titleFill='D9E1F2'; // light blue-gray — title
+
+  const border={
+    top:{style:'medium',color:{rgb:'000000'}},
+    bottom:{style:'medium',color:{rgb:'000000'}},
+    left:{style:'medium',color:{rgb:'000000'}},
+    right:{style:'medium',color:{rgb:'000000'}},
+  };
+  const thinBorder={
+    top:{style:'thin',color:{rgb:'000000'}},
+    bottom:{style:'thin',color:{rgb:'000000'}},
+    left:{style:'thin',color:{rgb:'000000'}},
+    right:{style:'thin',color:{rgb:'000000'}},
+  };
+  const baseAlign={horizontal:'center',vertical:'center',wrapText:true};
+  const leftAlign={horizontal:'left',vertical:'center',wrapText:true};
+
+  const hdr=['№','Сотрудник','Должность','Местоположение',
+    'Дата начала командировки','Последняя дата выезда',
+    'Продолжительность командировки, дней','Продолжительность отдыха, дней',
+    'Суммарный выполненный объём','Примечания'];
+
   const aoa=[
-    ['Отчёт по персоналу ПурГеоКом — '+today],
-    [],
-    ['Сотрудник','Должность','Телефон','База','Техника','Дата заезда','Дней в поле','Примечания'],
-    ...workers.map(w=>[
-      w.name||'',w.role||'',w.phone||'',w.base_name||'',
-      w.machine_name||'',w.start_date||'',
-      w.field_days!==null?w.field_days:'',w.notes||''
-    ])
+    ['Отчёт по персоналу ПурГеоКом — '+todayFmt],
+    hdr,
   ];
-  const ws=XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols']=[{wch:25},{wch:20},{wch:15},{wch:20},{wch:18},{wch:12},{wch:12},{wch:25}];
-  // Summary sheet
-  const baseGroups={};
-  workers.forEach(w=>{
-    if(!baseGroups[w.base_name])baseGroups[w.base_name]=[];
-    baseGroups[w.base_name].push(w);
+
+  workers.forEach((w,i)=>{
+    const shiftDays=w.last_shift_start
+      ? Math.max(0,Math.floor((new Date(w.last_shift_end||todayStr)-new Date(w.last_shift_start))/86400000))
+      : null;
+    aoa.push([
+      i+1,
+      w.name||'',
+      w.role||'',
+      w.base_name||'',
+      w.last_shift_start||'',
+      w.last_shift_end||'',
+      shiftDays!=null?shiftDays:'',
+      w.rest_days!=null?w.rest_days:'',
+      w.last_shift_volume!=null?w.last_shift_volume:'',
+      w.notes||''
+    ]);
   });
+
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols']=[{wch:5},{wch:26},{wch:20},{wch:20},{wch:14},{wch:14},{wch:14},{wch:13},{wch:14},{wch:30}];
+  ws['!rows']=[{hpx:32},{hpx:46}];
+  ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:COLS-1}}];
+
+  function colLetter(c){let s='',n=c;do{s=String.fromCharCode(65+n%26)+s;n=Math.floor(n/26)-1;}while(n>=0);return s;}
+  function ref(r,c){return colLetter(c)+(r+1);}
+  function setStyle(cr,st){if(!ws[cr])ws[cr]={t:'s',v:''};ws[cr].s=st;}
+
+  // Title row
+  setStyle(ref(0,0),{
+    font:{name:'Times New Roman',bold:true,sz:14},
+    alignment:{horizontal:'center',vertical:'center'},
+    fill:{patternType:'solid',fgColor:{rgb:titleFill}},
+    border
+  });
+
+  // Header row (row index 1)
+  for(let c=0;c<COLS;c++){
+    setStyle(ref(1,c),{
+      font:{name:'Times New Roman',bold:true,sz:11},
+      alignment:baseAlign,
+      fill:{patternType:'solid',fgColor:{rgb:hdrFill}},
+      border
+    });
+  }
+
+  // Data rows (start at index 2)
+  workers.forEach((w,i)=>{
+    const r=i+2;
+    const isBlue=i%2===0;
+    const fill=isBlue?{patternType:'solid',fgColor:{rgb:rowFill}}:{patternType:'solid',fgColor:{rgb:'FFFFFF'}};
+    for(let c=0;c<COLS;c++){
+      const align=c===1||c===2||c===3||c===9?leftAlign:baseAlign;
+      setStyle(ref(r,c),{font:{name:'Times New Roman',sz:11},alignment:align,fill,border:thinBorder});
+    }
+  });
+
+  ws['!views']=[{state:'frozen',xSplit:0,ySplit:2}];
+
+  // Summary sheet by bases
+  const baseGroups={};
+  workers.forEach(w=>{const bn=w.base_name||'—';if(!baseGroups[bn])baseGroups[bn]=[];baseGroups[bn].push(w);});
   const sumAoa=[
     ['Сводка по базам'],
-    ['База','Кол-во','Ср. дней в поле','30+ дней'],
+    ['База','Кол-во сотрудников','На вахте','Средний объём'],
     ...Object.entries(baseGroups).map(([bn,ww])=>[
       bn,ww.length,
-      ww.filter(w=>w.field_days!==null).length?
-        Math.round(ww.filter(w=>w.field_days!==null).reduce((a,w)=>a+w.field_days,0)/ww.filter(w=>w.field_days!==null).length):0,
-      ww.filter(w=>(w.field_days||0)>=30).length
+      ww.filter(w=>w.last_shift_start&&!w.last_shift_end).length,
+      ww.filter(w=>w.last_shift_volume!=null).length
+        ?Math.round(ww.filter(w=>w.last_shift_volume!=null).reduce((a,w)=>a+(w.last_shift_volume||0),0)/ww.filter(w=>w.last_shift_volume!=null).length)
+        :''
     ])
   ];
+  const sumWs=XLSX.utils.aoa_to_sheet(sumAoa);
+  sumWs['!cols']=[{wch:25},{wch:18},{wch:12},{wch:14}];
+  sumWs['!merges']=[{s:{r:0,c:0},e:{r:0,c:3}}];
+
   XLSX.utils.book_append_sheet(wb,ws,'Персонал');
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(sumAoa),'По базам');
-  XLSX.writeFile(wb,'Персонал_'+today.replace(/\./g,'_')+'.xlsx');
+  XLSX.utils.book_append_sheet(wb,sumWs,'По базам');
+  XLSX.writeFile(wb,'Персонал_'+todayStr.replace(/-/g,'_')+'.xlsx');
   toast('Excel сохранён','ok');
 }
 

@@ -1,6 +1,6 @@
 async function loadPGK(){
   const[wr,mr,er,br]=await Promise.all([
-    fetch(`${API}/pgk/workers`),fetch(`${API}/pgk/machinery`),
+    fetch(`${API}/pgk/workers/summary`),fetch(`${API}/pgk/machinery`),
     fetch(`${API}/pgk/equipment`),fetch(`${API}/bases`)
   ]);
   pgkWorkers=await wr.json();pgkMachinery=await mr.json();
@@ -177,8 +177,11 @@ function pgkPageWorkers(pb){
     const st=w.status||'home';
     const isFired=st==='fired';
     const _id=escAttr(w.id);
+    const restDays=w.rest_days!=null?w.rest_days+' дн.':'—';
+    const lastOut=w.last_shift_end?fmt(w.last_shift_end):'—';
+    const vol=w.last_shift_volume!=null?w.last_shift_volume:'—';
     return `<tr class="${isFired?'wt-fired':''}" data-wid="${w.id}"
-      data-search="${esc((w.name+' '+(w.role||'')+' '+(w.phone||'')+' '+(b?b.name:'')+' '+(w.notes||'')).toLowerCase())}"
+      data-search="${esc((w.name+' '+(w.role||'')+' '+(b?b.name:'')+' '+(w.notes||'')).toLowerCase())}"
       oncontextmenu="event.preventDefault();workerCtxMenu(event,'${_id}')">
       <td style="text-align:center;color:var(--tx3);font-size:10px;font-weight:600">${i+1}</td>
       <td class="td-link" style="font-weight:600" onclick="openWorkerDetail('${_id}')">${esc(w.name.trim())}</td>
@@ -186,7 +189,9 @@ function pgkPageWorkers(pb){
       <td class="td-editable" onclick="pgkCellEdit(event,this,'worker','${_id}','status')"><span class="wt-badge ${statusCls[st]||'wbs-home'}">${WORKER_STATUSES[st]||st}</span></td>
       <td class="td-editable" onclick="pgkCellEdit(event,this,'worker','${_id}','base_id')">${b?`<span style="color:var(--bpc)">🏕 ${esc(b.name)}</span>`:'<span style="color:var(--tx3)">—</span>'}</td>
       <td class="td-days">${w.start_date?`<span title="с ${fmt(w.start_date)}">${days}</span>`:'—'}</td>
-      <td class="td-editable" style="white-space:nowrap" onclick="pgkCellEdit(event,this,'worker','${_id}','phone')">${w.phone?'📞 '+esc(w.phone):'—'}</td>
+      <td style="text-align:center;font-size:11px;color:var(--tx2)">${lastOut}</td>
+      <td style="text-align:center;font-size:11px;${w.rest_days!=null&&w.rest_days>=30?'color:#92400e;font-weight:700':'color:var(--tx2)'}">${restDays}</td>
+      <td style="text-align:right;font-size:11px;color:var(--acc);padding:2px 6px">${vol}</td>
       <td class="td-notes td-editable" title="${esc(w.notes||'')}" onclick="pgkCellEdit(event,this,'worker','${_id}','notes')">${esc(w.notes||'')}</td>
     </tr>`;
   }).join('');
@@ -224,10 +229,12 @@ function pgkPageWorkers(pb){
           ${thSort('status','Статус')}
           ${thSort('base','База / Объект')}
           ${thSort('days','Дней')}
-          ${thSort('phone','Телефон')}
+          <th class="no-sort" style="min-width:100px;text-align:center">Посл. выезд</th>
+          <th class="no-sort" style="min-width:80px;text-align:center">Дней отдыха</th>
+          <th class="no-sort" style="min-width:80px;text-align:right">Объём</th>
           <th class="no-sort" style="min-width:160px">Примечания</th>
         </tr></thead>
-        <tbody id="wt-tbody">${rows||`<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--tx3)">Нет сотрудников</td></tr>`}</tbody>
+        <tbody id="wt-tbody">${rows||`<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--tx3)">Нет сотрудников</td></tr>`}</tbody>
       </table>
     </div>
   </div>`;
@@ -324,7 +331,7 @@ async function openWorkerDetail(wid){
   const vpTotal=volProg.length;
   const html=`<div style="margin-bottom:10px">
     <div style="font-size:14px;font-weight:800">${esc(w.name)}</div>
-    <div style="font-size:11px;color:var(--tx2)">${w.role||'—'} ${w.phone?'· 📞 '+w.phone:''}</div>
+    <div style="font-size:11px;color:var(--tx2)">${w.role||'—'}</div>
     <div style="font-size:10px;margin-top:4px">${WORKER_STATUSES[w.status||'home']||''} ${b?'· 🏕 '+esc(b.name):''}</div>
   </div>
   ${w.base_id?`<div style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap">
@@ -376,7 +383,7 @@ function openStartShiftModal(wid){
       await fetch(`${API}/pgk/workers/${wid}`,{method:'PUT',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({...w,base_id:baseId,start_date:startDate,status:'working',user_name:un()})});
       // Update local pgkWorkers cache immediately so openEndShiftModal can read start_date
-      const fresh=await fetch(`${API}/pgk/workers`).then(r=>r.json()).catch(()=>null);
+      const fresh=await fetch(`${API}/pgk/workers/summary`).then(r=>r.json()).catch(()=>null);
       if(fresh){window.pgkWorkers=fresh;}
       closeModal();await loadPGK();if(currentObj)await refreshCurrent();toast('Сотрудник назначен на базу','ok');
     }}]);
@@ -1094,7 +1101,6 @@ function pgkAddWorker(){
   showModal('Новый сотрудник',`<div class="fgr">
     <div class="fg s2"><label>ФИО *</label><input id="f-n" placeholder="Иванов Иван Иванович"></div>
     <div class="fg"><label>Должность</label><input id="f-r" placeholder="Буровой мастер"></div>
-    <div class="fg"><label>Телефон</label><input id="f-p"></div>
     <div class="fg"><label>Дата начала работы</label><input id="f-sd" type="date"></div>
     <div class="fg s2"><label>База</label><select id="f-b"><option value="">— не назначен —</option>${bases.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select></div>
     <div class="fg s2"><label>Примечания</label><textarea id="f-nt"></textarea></div>
@@ -1406,7 +1412,6 @@ function pgkEditWorker(id){
   showModal('Редактировать сотрудника',`<div class="fgr">
     <div class="fg s2"><label>ФИО *</label><input id="f-n" value="${esc(w.name)}"></div>
     <div class="fg"><label>Должность</label><input id="f-r" value="${esc(w.role||'')}"></div>
-    <div class="fg"><label>Телефон</label><input id="f-p" value="${esc(w.phone||'')}"></div>
     <div class="fg"><label>Дата начала работы</label><input id="f-sd" type="date" value="${w.start_date||''}"></div>
     <div class="fg s2"><label>База</label><select id="f-b"><option value="">— не назначен —</option>${bases.map(b=>`<option value="${b.id}" ${w.base_id===b.id?'selected':''}>${esc(b.name)}</option>`).join('')}</select></div>
     <div class="fg s2"><label>Примечания</label><textarea id="f-nt">${esc(w.notes||'')}</textarea></div>
@@ -1414,16 +1419,14 @@ function pgkEditWorker(id){
 }
 async function savePGKWorker(id){
   const name=v('f-n').trim();if(!name){toast('Введите имя','err');return;}
-  // Проверка дублирования имени
   const duplicate=pgkWorkers.find(w=>w.name.trim().toLowerCase()===name.toLowerCase()&&w.id!==id);
   if(duplicate){toast('Сотрудник с таким именем уже существует','err');return;}
   const base_id=v('f-b')||null;
-  // Определяем статус: если назначена база — В работе, если снята — Дома
   const existing=id?pgkWorkers.find(x=>x.id===id):null;
   let status=existing?existing.status||'home':'home';
-  if(base_id&&!existing?.base_id) status='working'; // назначили на базу
-  if(!base_id&&existing?.base_id) status='home';    // сняли с базы
-  const data={name,role:v('f-r'),phone:v('f-p'),start_date:v('f-sd')||null,base_id,status,notes:v('f-nt'),user_name:un()};
+  if(base_id&&!existing?.base_id) status='working';
+  if(!base_id&&existing?.base_id) status='home';
+  const data={name,role:v('f-r'),phone:'',start_date:v('f-sd')||null,base_id,status,notes:v('f-nt'),user_name:un()};
   if(id)await fetch(`${API}/pgk/workers/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
   else  await fetch(`${API}/pgk/workers`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
   closeModal();await loadPGK();await loadAll();toast(id?'Обновлено':'Добавлено','ok');
@@ -1598,7 +1601,6 @@ function openAddWorkerModal(){
   showModal('Новый сотрудник',`<div class="fgr">
     <div class="fg s2"><label>ФИО *</label><input id="f-n"></div>
     <div class="fg"><label>Должность</label><input id="f-r"></div>
-    <div class="fg"><label>Телефон</label><input id="f-p"></div>
     <div class="fg"><label>Дата заезда</label><input id="f-sd" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
     <div class="fg s2"><label>Машина</label><select id="f-m">${machOpts}</select></div>
     <div class="fg s2"><label>Примечания</label><textarea id="f-nt"></textarea></div>
@@ -1610,7 +1612,6 @@ function openEditWorkerModal(id){
   showModal('Редактировать сотрудника',`<div class="fgr">
     <div class="fg s2"><label>ФИО *</label><input id="f-n" value="${esc(w.name)}"></div>
     <div class="fg"><label>Должность</label><input id="f-r" value="${esc(w.role||'')}"></div>
-    <div class="fg"><label>Телефон</label><input id="f-p" value="${esc(w.phone||'')}"></div>
     <div class="fg"><label>Дата заезда</label><input id="f-sd" type="date" value="${w.start_date||''}"></div>
     <div class="fg s2"><label>Машина</label><select id="f-m">${machOpts}</select></div>
     <div class="fg s2"><label>Примечания</label><textarea id="f-nt">${esc(w.notes||'')}</textarea></div>
@@ -1618,7 +1619,7 @@ function openEditWorkerModal(id){
 }
 async function saveWorker(id){
   const name=v('f-n').trim();if(!name){toast('Введите имя','err');return;}
-  const data={name,role:v('f-r'),phone:v('f-p'),start_date:v('f-sd')||null,machine_id:v('f-m')||null,base_id:currentObj.id,notes:v('f-nt'),user_name:un()};
+  const data={name,role:v('f-r'),phone:'',start_date:v('f-sd')||null,machine_id:v('f-m')||null,base_id:currentObj.id,notes:v('f-nt'),user_name:un()};
   if(id)await fetch(`${API}/pgk/workers/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
   else  await fetch(`${API}/pgk/workers`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
   closeModal();await refreshCurrent();toast(id?'Обновлено':'Добавлено','ok');
@@ -2230,7 +2231,7 @@ function tabTasks(pb){
 
 async function openAddTaskModal(){
   if(!pgkWorkers||pgkWorkers.length===0){
-    try{const d=await fetch(`${API}/pgk/workers`).then(r=>r.json());pgkWorkers=Array.isArray(d)?d:[];}catch(e){}
+    try{const d=await fetch(`${API}/pgk/workers/summary`).then(r=>r.json());pgkWorkers=Array.isArray(d)?d:[];}catch(e){}
   }
   const wOpts='<option value="">— не назначено —</option>'+(pgkWorkers||[]).map(w=>`<option value="${esc(w.name)}">${esc(w.name)}</option>`).join('');
   showModal('Новая задача',`<div class="fgr">

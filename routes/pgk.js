@@ -44,6 +44,36 @@ module.exports = (app, getDb, L) => {
     res.json({ ok: true });
   }));
 
+  // Workers enriched with last shift data and volume totals
+  app.get('/api/pgk/workers/summary', wrap((req, res) => {
+    const d = db();
+    const workers = all(d, `
+      SELECT w.*, b.name as base_name,
+        (SELECT ws.start_date FROM worker_shifts ws WHERE ws.worker_id=w.id
+         ORDER BY COALESCE(ws.start_date,'') DESC LIMIT 1) as last_shift_start,
+        (SELECT ws.end_date FROM worker_shifts ws WHERE ws.worker_id=w.id
+         ORDER BY COALESCE(ws.start_date,'') DESC LIMIT 1) as last_shift_end
+      FROM pgk_workers w LEFT JOIN bases b ON w.base_id=b.id ORDER BY w.name`);
+
+    const today = new Date().toISOString().split('T')[0];
+    for (const w of workers) {
+      w.rest_days = w.last_shift_end
+        ? Math.max(0, Math.floor((Date.now() - new Date(w.last_shift_end)) / 86400000))
+        : null;
+      if (w.last_shift_start) {
+        const volEnd = w.last_shift_end || today;
+        const r = all(d,
+          `SELECT COALESCE(SUM(CAST(completed AS REAL)), 0) as total
+           FROM vol_progress WHERE worker_ids LIKE ? AND work_date BETWEEN ? AND ? AND row_type != 'plan'`,
+          [`%${w.id}%`, w.last_shift_start, volEnd]);
+        w.last_shift_volume = r[0] ? r[0].total : 0;
+      } else {
+        w.last_shift_volume = null;
+      }
+    }
+    res.json(workers);
+  }));
+
   app.get('/api/pgk/workers/:id/shifts', wrap((req, res) =>
     res.json(all(db(), 'SELECT s.*,b.name as base_name FROM worker_shifts s LEFT JOIN bases b ON s.base_id=b.id WHERE s.worker_id=? ORDER BY s.start_date DESC', [req.params.id]))
   ));
