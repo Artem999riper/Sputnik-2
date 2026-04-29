@@ -106,16 +106,16 @@ function exportPersonnelExcel(workers){
   ];
 
   workers.forEach((w,i)=>{
-    const shiftEnd=w.last_shift_end||todayStr;
-    const shiftDays=w.last_shift_start
-      ? Math.max(0,Math.floor((new Date(shiftEnd)-new Date(w.last_shift_start))/86400000))
+    const onShift=w.last_shift_start&&!w.last_shift_end;
+    const shiftDays=onShift
+      ? Math.max(0,Math.floor((new Date(todayStr)-new Date(w.last_shift_start))/86400000))
       : null;
     aoa.push([
       i+1,
       w.name||'',
       w.role||'',
       w.base_name||'',
-      w.last_shift_start||'',
+      onShift?w.last_shift_start:'',
       w.last_shift_end||'',
       shiftDays!=null?shiftDays:'',
       w.rest_days!=null?w.rest_days:'',
