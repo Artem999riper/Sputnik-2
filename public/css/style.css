@@ -175,7 +175,9 @@ body.panel-open #gruz-page{right:var(--pw)}
 .wt-summary{display:flex;gap:10px;flex-wrap:wrap;padding:4px 12px;background:var(--s2);border-bottom:1px solid var(--bd);font-size:10px;flex-shrink:0}
 .wt-scroll{flex:1;overflow:auto}
 .wt-tbl{width:100%;border-collapse:collapse;font-size:11px;min-width:760px}
-.wt-tbl thead th{position:sticky;top:0;z-index:2;background:var(--s2);padding:6px 10px;text-align:left;font-size:10px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;white-space:nowrap;cursor:pointer;color:var(--tx2);border-bottom:2px solid var(--bd);user-select:none}
+.wt-tbl thead th{position:sticky;top:0;z-index:2;background:var(--s2);padding:6px 10px;text-align:left;font-size:10px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;white-space:nowrap;cursor:pointer;color:var(--tx2);border-bottom:2px solid var(--bd);user-select:none;overflow:hidden}
+.th-rzr{position:absolute;right:0;top:0;width:5px;height:100%;cursor:col-resize;z-index:3;background:transparent}
+.th-rzr:hover,.th-rzr:active{background:var(--acc);opacity:.35}
 .wt-tbl thead th:hover{color:var(--acc)}
 .wt-tbl thead th.wt-asc::after{content:' ▲';color:var(--acc)}
 .wt-tbl thead th.wt-desc::after{content:' ▼';color:var(--acc)}

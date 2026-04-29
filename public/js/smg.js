@@ -1320,12 +1320,14 @@ function smgExportExcel(){
   const today=new Date().toISOString().split('T')[0];
   const wb=XLSX.utils.book_new();
 
-  // Determine month range: from earliest plan_start / vol_progress to latest plan_end / vol_progress
+  // Determine month range: from earliest plan_start to latest plan_end across all volumes
+  const nowYM=new Date().getFullYear()*12+new Date().getMonth();
   let minYM=smgYear*12+smgMonth, maxYM=smgYear*12+smgMonth;
   vols.forEach(v=>{
     if(v.plan_start){const d=new Date(v.plan_start);const ym=d.getFullYear()*12+d.getMonth();if(ym<minYM)minYM=ym;}
     if(v.plan_end){const d=new Date(v.plan_end);const ym=d.getFullYear()*12+d.getMonth();if(ym>maxYM)maxYM=ym;}
   });
+  // Also include months with actual vol_progress data
   prog.forEach(p=>{
     if(p.work_date){
       const d=new Date(p.work_date);const ym=d.getFullYear()*12+d.getMonth();
@@ -1333,9 +1335,8 @@ function smgExportExcel(){
       if(ym>maxYM)maxYM=ym;
     }
   });
-  // Cap to current month as max (don't generate future months without data)
-  const nowYM=new Date().getFullYear()*12+new Date().getMonth();
-  if(maxYM>nowYM)maxYM=nowYM;
+  // Never generate sheets beyond actual plan completion or current month (whichever is later)
+  // but do allow future months if plan_end is in the future
 
   for(let ym=minYM;ym<=maxYM;ym++){
     const y=Math.floor(ym/12), m=ym%12;

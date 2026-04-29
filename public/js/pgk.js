@@ -137,6 +137,7 @@ function pgkPageWorkers(pb){
   const _ws=window._pgkWSort||'name', _wa=window._pgkWAsc!==false;
   const _wfStatus=window._pgkWFStatus||'';
   const _wfBase=window._pgkWFBase||'';
+  const _wfRole=window._pgkWFRole||'';
 
   const statusCls={working:'wbs-working',idle:'wbs-idle',sick:'wbs-sick',home:'wbs-home',fired:'wbs-fired'};
 
@@ -147,29 +148,33 @@ function pgkPageWorkers(pb){
   const byStatus={working:[],idle:[],sick:[],home:[],fired:[]};
   pgkWorkers.forEach(w=>{byStatus[w.status||'home'].push(w);});
 
-  // Filter (status+base only — search is done live via JS without re-render)
   let filtered=[...pgkWorkers].filter(w=>{
     if(_wfStatus&&(w.status||'home')!==_wfStatus)return false;
     if(_wfBase&&w.base_id!==_wfBase)return false;
+    if(_wfRole&&(w.role||'')!==_wfRole)return false;
     return true;
   });
 
-  // Sort
   filtered.sort((a,b)=>{
     let va,vb;
     if(_ws==='days'){va=getDays(a);vb=getDays(b);}
     else if(_ws==='base'){va=getBase(a);vb=getBase(b);}
     else if(_ws==='status'){va=getStatus(a);vb=getStatus(b);}
+    else if(_ws==='last_shift_end'){va=a.last_shift_end||'';vb=b.last_shift_end||'';}
+    else if(_ws==='rest_days'){va=a.rest_days!=null?a.rest_days:-1;vb=b.rest_days!=null?b.rest_days:-1;}
+    else if(_ws==='last_shift_volume'){va=a.last_shift_volume!=null?a.last_shift_volume:-1;vb=b.last_shift_volume!=null?b.last_shift_volume:-1;}
     else{va=a[_ws]||'';vb=b[_ws]||'';}
     if(typeof va==='number'&&typeof vb==='number')return(va-vb)*(_wa?1:-1);
     return String(va).localeCompare(String(vb),'ru')*(_wa?1:-1);
   });
 
   const thCls=col=>`class="${_ws===col?(_wa?'wt-asc':'wt-desc'):''}"`;
-  const thClick=col=>`onclick="window._pgkWSort=window._pgkWSort==='${col}'?(window._pgkWAsc=!(_wa=window._pgkWAsc!==false),'${col}'):'${col}';window._pgkWAsc=(window._pgkWSort==='${col}'&&'${col}'===window._pgkWSort)?window._pgkWAsc:true;renderPGK()"`;
+  const thSort=(col,lbl)=>`<th ${thCls(col)} onclick="if(window._pgkWSort==='${col}'){window._pgkWAsc=!(window._pgkWAsc!==false);}else{window._pgkWSort='${col}';window._pgkWAsc=true;}renderPGK()">${lbl}</th>`;
 
   const baseOpts=`<option value="">Все базы</option>`+bases.map(b=>`<option value="${b.id}" ${_wfBase===b.id?'selected':''}>${esc(b.name)}</option>`).join('');
   const statusOpts=`<option value="">Все статусы</option>`+Object.entries(WORKER_STATUSES).map(([k,v])=>`<option value="${k}" ${_wfStatus===k?'selected':''}>${v}</option>`).join('');
+  const roles=[...new Set(pgkWorkers.map(w=>w.role||'').filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ru'));
+  const roleOpts=`<option value="">Все должности</option>`+roles.map(r=>`<option value="${esc(r)}" ${_wfRole===r?'selected':''}>${esc(r)}</option>`).join('');
 
   const rows=filtered.map((w,i)=>{
     const b=bases.find(x=>x.id===w.base_id);
@@ -180,6 +185,7 @@ function pgkPageWorkers(pb){
     const restDays=w.rest_days!=null?w.rest_days+' дн.':'—';
     const lastOut=w.last_shift_end?fmt(w.last_shift_end):'—';
     const vol=w.last_shift_volume!=null?w.last_shift_volume:'—';
+    const notesPreview=esc((w.notes||'').replace(/\n/g,' ').slice(0,60));
     return `<tr class="${isFired?'wt-fired':''}" data-wid="${w.id}"
       data-search="${esc((w.name+' '+(w.role||'')+' '+(b?b.name:'')+' '+(w.notes||'')).toLowerCase())}"
       oncontextmenu="event.preventDefault();workerCtxMenu(event,'${_id}')">
@@ -192,20 +198,19 @@ function pgkPageWorkers(pb){
       <td style="text-align:center;font-size:11px;color:var(--tx2)">${lastOut}</td>
       <td style="text-align:center;font-size:11px;${w.rest_days!=null&&w.rest_days>=30?'color:#92400e;font-weight:700':'color:var(--tx2)'}">${restDays}</td>
       <td style="text-align:right;font-size:11px;color:var(--acc);padding:2px 6px">${vol}</td>
-      <td class="td-notes td-editable" title="${esc(w.notes||'')}" onclick="pgkCellEdit(event,this,'worker','${_id}','notes')">${esc(w.notes||'')}</td>
+      <td class="td-notes td-link" title="${notesPreview}" onclick="pgkNotesModal('${_id}')">${notesPreview||'<span style="color:var(--tx3)">—</span>'}</td>
     </tr>`;
   }).join('');
-
-  const thSort=(col,lbl)=>`<th ${thCls(col)} onclick="if(window._pgkWSort==='${col}'){window._pgkWAsc=!(window._pgkWAsc!==false);}else{window._pgkWSort='${col}';window._pgkWAsc=true;}renderPGK()">${lbl}</th>`;
 
   pb.innerHTML=`<div class="wt-outer">
     <div class="wt-toolbar">
       <span style="font-size:13px;font-weight:800;flex-shrink:0">👷 Сотрудники</span>
       <input id="pgk-w-search" type="search" placeholder="🔍 Поиск по имени, должности…"
-        style="font-size:11px;padding:3px 8px;border:1.5px solid var(--bd);border-radius:var(--rs);background:var(--s2);outline:none;min-width:190px;flex-shrink:0"
+        style="font-size:11px;padding:3px 8px;border:1.5px solid var(--bd);border-radius:var(--rs);background:var(--s2);outline:none;min-width:150px;flex-shrink:0"
         oninput="pgkWorkerSearchFilter(this.value)" />
       <select style="font-size:11px;padding:3px 6px;border:1.5px solid var(--bd);border-radius:var(--rs);background:var(--s2)" onchange="window._pgkWFStatus=this.value;renderPGK()">${statusOpts}</select>
       <select style="font-size:11px;padding:3px 6px;border:1.5px solid var(--bd);border-radius:var(--rs);background:var(--s2)" onchange="window._pgkWFBase=this.value;renderPGK()">${baseOpts}</select>
+      <select style="font-size:11px;padding:3px 6px;border:1.5px solid var(--bd);border-radius:var(--rs);background:var(--s2)" onchange="window._pgkWFRole=this.value;renderPGK()">${roleOpts}</select>
       <div style="margin-left:auto;display:flex;gap:4px;flex-shrink:0">
         <button class="btn bs bsm" onclick="pgkImportWorkers()" title="Импорт из Excel">📥 Excel</button>
         <button class="btn bp bsm" onclick="pgkAddWorker()">＋ Добавить</button>
@@ -221,17 +226,17 @@ function pgkPageWorkers(pb){
       <span id="wt-shown-count" style="color:var(--acc);margin-left:4px;display:none">Найдено: <b id="wt-shown-n">0</b></span>
     </div>
     <div class="wt-scroll">
-      <table class="wt-tbl">
-        <thead><tr>
+      <table class="wt-tbl" id="pgk-workers-tbl">
+        <thead><tr id="pgk-workers-hdr">
           <th class="no-sort" style="width:36px;text-align:center;color:var(--tx3)">#</th>
           ${thSort('name','Ф.И.О.')}
           ${thSort('role','Должность')}
           ${thSort('status','Статус')}
           ${thSort('base','База / Объект')}
           ${thSort('days','Дней')}
-          <th class="no-sort" style="min-width:100px;text-align:center">Посл. выезд</th>
-          <th class="no-sort" style="min-width:80px;text-align:center">Дней отдыха</th>
-          <th class="no-sort" style="min-width:80px;text-align:right">Объём</th>
+          ${thSort('last_shift_end','Посл. выезд')}
+          ${thSort('rest_days','Дней отдыха')}
+          ${thSort('last_shift_volume','Объём')}
           <th class="no-sort" style="min-width:160px">Примечания</th>
         </tr></thead>
         <tbody id="wt-tbody">${rows||`<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--tx3)">Нет сотрудников</td></tr>`}</tbody>
@@ -239,13 +244,13 @@ function pgkPageWorkers(pb){
     </div>
   </div>`;
 
-  // Restore search value without triggering re-render
   const srch=window._pgkWSearchVal||'';
   if(srch){
     const inp=document.getElementById('pgk-w-search');
     if(inp)inp.value=srch;
     pgkWorkerSearchFilter(srch);
   }
+  _pgkInitColResize('pgk-workers-hdr');
 }
 
 function pgkWorkerSearchFilter(val){
@@ -267,6 +272,45 @@ function pgkWorkerSearchFilter(val){
     if(q){cntWrap.style.display='';cntN.textContent=shown;}
     else{cntWrap.style.display='none';}
   }
+}
+
+function pgkNotesModal(wid){
+  const w=pgkWorkers.find(x=>x.id===wid);if(!w)return;
+  showModal('Примечания — '+esc(w.name),`
+    <div class="fg s2" style="margin:0">
+      <textarea id="pgk-notes-ta" rows="6"
+        style="width:100%;font-size:13px;padding:8px;border:1.5px solid var(--bd);border-radius:var(--rs);background:var(--s2);color:var(--tx);resize:vertical;box-sizing:border-box"
+        placeholder="Введите примечание...">${esc(w.notes||'')}</textarea>
+    </div>
+  `,[
+    {label:'Закрыть',cls:'bs',fn:closeModal},
+    {label:'Сохранить',cls:'bp',fn:async()=>{
+      const notes=document.getElementById('pgk-notes-ta').value;
+      await fetch(`${API}/pgk/workers/${wid}`,{method:'PUT',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({...w,notes,user_name:un()})});
+      closeModal();await loadPGK();toast('Примечание сохранено','ok');
+    }}
+  ]);
+  setTimeout(()=>{const ta=document.getElementById('pgk-notes-ta');if(ta){ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);}},50);
+}
+
+function _pgkInitColResize(trId){
+  const tr=document.getElementById(trId);
+  if(!tr)return;
+  tr.querySelectorAll('th').forEach(th=>{
+    if(th.querySelector('.th-rzr'))return;
+    const rz=document.createElement('div');
+    rz.className='th-rzr';
+    th.appendChild(rz);
+    rz.addEventListener('mousedown',e=>{
+      e.preventDefault();e.stopPropagation();
+      const startX=e.pageX, startW=th.offsetWidth;
+      const onMove=e=>{const w=Math.max(40,startW+(e.pageX-startX));th.style.width=w+'px';th.style.minWidth=w+'px';};
+      const onUp=()=>{document.removeEventListener('mousemove',onMove);document.removeEventListener('mouseup',onUp);};
+      document.addEventListener('mousemove',onMove);
+      document.addEventListener('mouseup',onUp);
+    });
+  });
 }
 
 function workerCtxMenu(ev,wid){
