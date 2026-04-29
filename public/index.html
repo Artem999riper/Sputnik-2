@@ -31,8 +31,6 @@
   </div>
   <button id="search-btn" class="btn bs bsm" onclick="openGlobalSearch()" title="Поиск (Ctrl+F)">🔍</button>
   <div class="tdv"></div>
-  <button class="btn bb bsm" onclick="openAddBaseModal()">🏕 База</button>
-  <button class="btn bp bsm" onclick="openAddSiteModal()">＋ Объект</button>
   <button class="btn bs bsm" onclick="toggleSettingsPanel()" title="Настройки UI" id="settings-btn">⚙</button>
   <div class="tstats">
     <div class="tst a"><span class="sv" id="st-s">0</span><span class="sl">Объектов</span></div>
@@ -76,7 +74,10 @@
   <div class="sbh">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
       <h3 style="margin:0">📍 Объекты</h3>
-      <button class="btn bs bxs" onclick="loadAll().then(()=>toast('Обновлено','ok'))" title="Обновить список">🔄</button>
+      <div style="display:flex;gap:4px">
+        <button class="btn bp bxs" onclick="openAddSiteModal()" title="Добавить объект">＋ Объект</button>
+        <button class="btn bs bxs" onclick="loadAll().then(()=>toast('Обновлено','ok'))" title="Обновить список">🔄</button>
+      </div>
     </div>
     <input id="srch" type="text" placeholder="🔍 Поиск..." oninput="renderSidebar()">
     <div class="fts">
@@ -90,13 +91,12 @@
   <!-- Список баз -->
   <div style="padding:6px 9px 4px;border-top:2px solid var(--bd);border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
     <h3 style="margin:0;font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--tx3)">🏕 Базы</h3>
-    <button class="btn bb bxs" onclick="openAddBaseModal()" title="Добавить базу">＋</button>
+    <button class="btn bb bxs" onclick="setTool('base');toast('Кликните на карте для размещения базы','ok')" title="Добавить базу (клик на карте)">＋</button>
   </div>
   <div id="blist" style="overflow-y:auto;max-height:220px;flex-shrink:0"></div>
   <div class="sbft">
     <button class="btn bs bsm" style="justify-content:center" onclick="openGLog()">📋 Журнал</button>
     <button class="btn bs bsm" style="justify-content:center" onclick="openPersonnelReport()">👷 Отчёт персонала</button>
-    <button class="btn bs bsm" style="justify-content:center" onclick="openMachineryReport()">🚛 Отчёт техника</button>
     <button class="btn bs bsm" style="justify-content:center" onclick="openBackupModal()">💾 Резервные копии</button>
   </div>
 </div>
@@ -140,8 +140,6 @@
 
 <div id="mtb">
   <button class="mt on" id="tool-view" onclick="setTool('view')">👁 Просмотр</button>
-  <button class="mt" id="tool-base" onclick="setTool('base')">🏕 База</button>
-  <button class="mt" id="tool-machine" onclick="setTool('machine')">🚛 Техника</button>
   <div style="width:1px;height:16px;background:rgba(0,0,0,.12);margin:0 2px;flex-shrink:0"></div>
   <button class="mt" id="tool-kml" onclick="toggleKmlPanel()" title="Менеджер слоёв KML/GPX">🗂 Слои</button>
   <div style="width:1px;height:16px;background:rgba(0,0,0,.12);margin:0 2px;flex-shrink:0"></div>
@@ -204,7 +202,6 @@
       <h3>ПурГеоКом</h3>
       <div class="pnav">
         <div class="pni on" data-pg="workers" onclick="setPGKTab(this)">👷 Сотрудники</div>
-        <div class="pni" data-pg="machinery" onclick="setPGKTab(this)">🚛 Техника</div>
         <div class="pni" data-pg="equipment" onclick="setPGKTab(this)">🔩 Оборудование</div>
         <div class="pni" data-pg="materials" onclick="setPGKTab(this)">📦 Материалы</div>
       </div>

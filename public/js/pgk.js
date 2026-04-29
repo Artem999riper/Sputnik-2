@@ -143,13 +143,15 @@ function pgkPageWorkers(pb){
 
   const getDays=w=>w.start_date?Math.max(0,Math.floor((today-new Date(w.start_date))/86400000)):0;
   const getBase=w=>(bases.find(x=>x.id===w.base_id)||{}).name||'';
-  const getStatus=w=>WORKER_STATUSES[w.status||'home']||'';
+  // Derive effective status: if worker has days on shift → working; if shift ended → home overrides
+  const effSt=w=>w.start_date?'working':(w.status||'home');
+  const getStatus=w=>WORKER_STATUSES[effSt(w)]||'';
 
   const byStatus={working:[],idle:[],sick:[],home:[],fired:[]};
-  pgkWorkers.forEach(w=>{byStatus[w.status||'home'].push(w);});
+  pgkWorkers.forEach(w=>{const s=effSt(w);(byStatus[s]=byStatus[s]||[]).push(w);});
 
   let filtered=[...pgkWorkers].filter(w=>{
-    if(_wfStatus&&(w.status||'home')!==_wfStatus)return false;
+    if(_wfStatus&&effSt(w)!==_wfStatus)return false;
     if(_wfBase&&w.base_id!==_wfBase)return false;
     if(_wfRole&&(w.role||'')!==_wfRole)return false;
     return true;
@@ -182,7 +184,7 @@ function pgkPageWorkers(pb){
   const rows=filtered.map((w,i)=>{
     const b=bases.find(x=>x.id===w.base_id);
     const days=getDays(w);
-    const st=w.status||'home';
+    const st=effSt(w);
     const isFired=st==='fired';
     const _id=escAttr(w.id);
     const restDays=w.rest_days!=null?w.rest_days+' дн.':'—';
@@ -201,7 +203,7 @@ function pgkPageWorkers(pb){
       <td style="text-align:center;font-size:11px;color:var(--tx2)">${lastOut}</td>
       <td style="text-align:center;font-size:11px;${w.rest_days!=null&&w.rest_days>=30?'color:#92400e;font-weight:700':'color:var(--tx2)'}">${restDays}</td>
       <td style="text-align:right;font-size:11px;color:var(--acc);padding:2px 6px">${vol}</td>
-      <td class="td-notes td-link" title="${notesPreview}" onclick="pgkNotesModal('${_id}')">${notesPreview||'<span style="color:var(--tx3)">—</span>'}</td>
+      <td class="td-notes td-link" style="color:var(--tx)" title="${notesPreview}" onclick="pgkNotesModal('${_id}')">${notesPreview||'<span style="color:var(--tx3)">—</span>'}</td>
     </tr>`;
   }).join('');
 
@@ -240,7 +242,7 @@ function pgkPageWorkers(pb){
           ${thSort('last_shift_end','Посл. выезд')}
           ${thSort('rest_days','Дней отдыха')}
           ${thSort('last_shift_volume','Объём')}
-          <th class="no-sort" style="min-width:160px">Примечания</th>
+          <th class="no-sort" style="min-width:260px">Примечания</th>
         </tr></thead>
         <tbody id="wt-tbody">${rows||`<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--tx3)">Нет сотрудников</td></tr>`}</tbody>
       </table>
